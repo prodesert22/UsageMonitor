@@ -118,6 +118,27 @@ fn print_snapshot(snap: &UsageSnapshot) {
     }
 }
 
+const ANSI_GREEN: &str = "\x1b[32m";
+const ANSI_YELLOW: &str = "\x1b[33m";
+const ANSI_RED: &str = "\x1b[31m";
+const ANSI_RESET: &str = "\x1b[0m";
+
+/// Color for a usage ratio: green below 70%, yellow from 70%, red from 90%.
+fn usage_color(ratio: f64) -> &'static str {
+    if ratio >= 0.90 {
+        ANSI_RED
+    } else if ratio >= 0.70 {
+        ANSI_YELLOW
+    } else {
+        ANSI_GREEN
+    }
+}
+
+fn use_color() -> bool {
+    use std::io::IsTerminal;
+    std::env::var_os("NO_COLOR").is_none() && std::io::stdout().is_terminal()
+}
+
 fn print_window(w: &RateWindow) {
     let pct = w.usage_ratio * 100.0;
     let filled = (w.usage_ratio * 20.0).round() as usize;
@@ -126,5 +147,29 @@ fn print_window(w: &RateWindow) {
         .resets_at
         .map(|r| format!("  resets {}", r.format("%Y-%m-%d %H:%M UTC")))
         .unwrap_or_default();
-    println!("{:<22} [{}] {:>5.1}%{}", w.label, bar, pct, resets);
+
+    let (color, reset) = if use_color() {
+        (usage_color(w.usage_ratio), ANSI_RESET)
+    } else {
+        ("", "")
+    };
+    println!(
+        "{:<22} [{}{}{}] {}{:>5.1}%{}{}",
+        w.label, color, bar, reset, color, pct, reset, resets
+    );
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_usage_color_thresholds() {
+        assert_eq!(usage_color(0.0), ANSI_GREEN);
+        assert_eq!(usage_color(0.69), ANSI_GREEN);
+        assert_eq!(usage_color(0.70), ANSI_YELLOW);
+        assert_eq!(usage_color(0.89), ANSI_YELLOW);
+        assert_eq!(usage_color(0.90), ANSI_RED);
+        assert_eq!(usage_color(1.0), ANSI_RED);
+    }
 }
