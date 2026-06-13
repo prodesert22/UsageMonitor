@@ -11,7 +11,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::SpendPanelError;
-use crate::model::{CreditsSnapshot, NamedRateWindow, PlanInfo, RateWindow, RateWindowStatus, UsageSnapshot};
+use crate::model::{
+    CreditsSnapshot, NamedRateWindow, PlanInfo, RateWindow, RateWindowStatus, UsageSnapshot,
+};
 use crate::provider::{ProviderContext, ProviderMetadata, UsageProvider};
 
 /// Public OAuth client ID of the Claude Code CLI (not a secret).
@@ -79,10 +81,14 @@ impl ClaudeOAuthCredentials {
 
     /// Parses the Claude Code credentials JSON.
     pub fn parse(raw: &str) -> Result<Self, SpendPanelError> {
-        let file: CredentialsFile = serde_json::from_str(raw)
-            .map_err(|e| SpendPanelError::ParseError("claude".into(), format!("credentials: {}", e)))?;
+        let file: CredentialsFile = serde_json::from_str(raw).map_err(|e| {
+            SpendPanelError::ParseError("claude".into(), format!("credentials: {}", e))
+        })?;
         let oauth = file.claude_ai_oauth.ok_or_else(|| {
-            SpendPanelError::AuthFailed("claude".into(), "no claudeAiOauth section in credentials".into())
+            SpendPanelError::AuthFailed(
+                "claude".into(),
+                "no claudeAiOauth section in credentials".into(),
+            )
         })?;
         let access_token = oauth.access_token.unwrap_or_default().trim().to_string();
         if access_token.is_empty() {
@@ -241,7 +247,10 @@ impl ClaudeProvider {
             .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
 
         let status = resp.status();
-        let body = resp.text().await.map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
         if !status.is_success() {
             return Err(SpendPanelError::AuthFailed(
                 "claude".into(),
@@ -249,8 +258,9 @@ impl ClaudeProvider {
             ));
         }
 
-        let token: TokenRefreshResponse = serde_json::from_str(&body)
-            .map_err(|e| SpendPanelError::ParseError("claude".into(), format!("token refresh: {}", e)))?;
+        let token: TokenRefreshResponse = serde_json::from_str(&body).map_err(|e| {
+            SpendPanelError::ParseError("claude".into(), format!("token refresh: {}", e))
+        })?;
 
         let expires_at = token
             .expires_in
@@ -263,21 +273,25 @@ impl ClaudeProvider {
             subscription_type: creds.subscription_type.clone(),
         };
 
-        if let Some(path) = persist_path {
-            if let Err(e) = Self::persist_credentials(path, &refreshed) {
-                tracing::warn!("failed to persist refreshed claude credentials: {}", e);
-            }
+        if let Some(path) = persist_path
+            && let Err(e) = Self::persist_credentials(path, &refreshed)
+        {
+            tracing::warn!("failed to persist refreshed claude credentials: {}", e);
         }
 
         Ok(refreshed)
     }
 
     /// Rewrites the credentials file with the refreshed token, keeping extra fields.
-    fn persist_credentials(path: &Path, creds: &ClaudeOAuthCredentials) -> Result<(), SpendPanelError> {
+    fn persist_credentials(
+        path: &Path,
+        creds: &ClaudeOAuthCredentials,
+    ) -> Result<(), SpendPanelError> {
         let raw = std::fs::read_to_string(path)
             .map_err(|e| SpendPanelError::ConfigError(format!("read credentials: {}", e)))?;
-        let mut file: CredentialsFile = serde_json::from_str(&raw)
-            .map_err(|e| SpendPanelError::ParseError("claude".into(), format!("credentials: {}", e)))?;
+        let mut file: CredentialsFile = serde_json::from_str(&raw).map_err(|e| {
+            SpendPanelError::ParseError("claude".into(), format!("credentials: {}", e))
+        })?;
 
         let mut section = file.claude_ai_oauth.take().unwrap_or(OAuthSection {
             access_token: None,
@@ -292,8 +306,9 @@ impl ClaudeProvider {
         section.subscription_type = creds.subscription_type.clone();
         file.claude_ai_oauth = Some(section);
 
-        let serialized = serde_json::to_string(&file)
-            .map_err(|e| SpendPanelError::ParseError("claude".into(), format!("credentials: {}", e)))?;
+        let serialized = serde_json::to_string(&file).map_err(|e| {
+            SpendPanelError::ParseError("claude".into(), format!("credentials: {}", e))
+        })?;
         std::fs::write(path, serialized)
             .map_err(|e| SpendPanelError::ConfigError(format!("write credentials: {}", e)))
     }
@@ -332,7 +347,10 @@ impl ClaudeProvider {
             return Err(SpendPanelError::RateLimited("claude".into(), retry_after));
         }
 
-        let body = resp.text().await.map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
         if !status.is_success() {
             return Err(SpendPanelError::ProviderError(
                 "claude".into(),
@@ -340,8 +358,9 @@ impl ClaudeProvider {
             ));
         }
 
-        serde_json::from_str(&body)
-            .map_err(|e| SpendPanelError::ParseError("claude".into(), format!("oauth usage: {}", e)))
+        serde_json::from_str(&body).map_err(|e| {
+            SpendPanelError::ParseError("claude".into(), format!("oauth usage: {}", e))
+        })
     }
 
     fn rate_window(label: &str, window_minutes: u32, w: &OAuthUsageWindow) -> RateWindow {
@@ -381,7 +400,10 @@ impl ClaudeProvider {
         }
     }
 
-    fn snapshot_from_usage(usage: &OAuthUsageResponse, creds: &ClaudeOAuthCredentials) -> UsageSnapshot {
+    fn snapshot_from_usage(
+        usage: &OAuthUsageResponse,
+        creds: &ClaudeOAuthCredentials,
+    ) -> UsageSnapshot {
         let mut snapshot = UsageSnapshot::new("claude");
         snapshot.collected_at = Utc::now();
 
@@ -389,7 +411,8 @@ impl ClaudeProvider {
             snapshot.primary_rate_window = Some(Self::rate_window("Session (5h)", 300, w));
         }
         if let Some(w) = &usage.seven_day {
-            snapshot.secondary_rate_window = Some(Self::rate_window("Weekly (all models)", 10_080, w));
+            snapshot.secondary_rate_window =
+                Some(Self::rate_window("Weekly (all models)", 10_080, w));
         }
         if let Some(w) = &usage.seven_day_opus {
             snapshot.extra_rate_windows.push(NamedRateWindow {
@@ -406,23 +429,25 @@ impl ClaudeProvider {
             });
         }
 
-        if let Some(extra) = &usage.extra_usage {
-            if extra.is_enabled.unwrap_or(false) {
-                let used = extra.used_credits.unwrap_or(0.0);
-                let total = extra.monthly_limit;
-                snapshot.credits = Some(CreditsSnapshot {
-                    balance: total.map(|t| (t - used).max(0.0)).unwrap_or(0.0),
-                    currency: extra.currency.clone().unwrap_or_else(|| "USD".into()),
-                    total,
-                    used: Some(used),
-                    renews_at: None,
-                    bonus: None,
-                    purchased: None,
-                });
-            }
+        if let Some(extra) = &usage.extra_usage
+            && extra.is_enabled.unwrap_or(false)
+        {
+            let used = extra.used_credits.unwrap_or(0.0);
+            let total = extra.monthly_limit;
+            snapshot.credits = Some(CreditsSnapshot {
+                balance: total.map(|t| (t - used).max(0.0)).unwrap_or(0.0),
+                currency: extra.currency.clone().unwrap_or_else(|| "USD".into()),
+                total,
+                used: Some(used),
+                renews_at: None,
+                bonus: None,
+                purchased: None,
+            });
         }
 
-        snapshot.plan = Some(Self::plan_from_subscription(creds.subscription_type.as_deref()));
+        snapshot.plan = Some(Self::plan_from_subscription(
+            creds.subscription_type.as_deref(),
+        ));
         snapshot
     }
 }
@@ -463,7 +488,9 @@ impl UsageProvider for ClaudeProvider {
         };
 
         if creds.is_expired() {
-            creds = Self::refresh_token(self.token_base(), &client, &creds, persist_path.as_deref()).await?;
+            creds =
+                Self::refresh_token(self.token_base(), &client, &creds, persist_path.as_deref())
+                    .await?;
         }
 
         let usage = Self::fetch_oauth_usage(self.api_base(), &client, &creds.access_token).await?;
@@ -482,7 +509,11 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn write_temp_credentials(name: &str, contents: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("usage-monitor-test-{}-{}.json", name, std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "usage-monitor-test-{}-{}.json",
+            name,
+            std::process::id()
+        ));
         std::fs::write(&path, contents).unwrap();
         path
     }
@@ -510,7 +541,8 @@ mod tests {
 
     #[test]
     fn test_parse_credentials() {
-        let creds = ClaudeOAuthCredentials::parse(&credentials_json("at-test", future_millis())).unwrap();
+        let creds =
+            ClaudeOAuthCredentials::parse(&credentials_json("at-test", future_millis())).unwrap();
         assert_eq!(creds.access_token, "at-test");
         assert_eq!(creds.refresh_token.as_deref(), Some("rt-test"));
         assert_eq!(creds.subscription_type.as_deref(), Some("max"));
@@ -519,7 +551,8 @@ mod tests {
 
     #[test]
     fn test_parse_credentials_expired() {
-        let creds = ClaudeOAuthCredentials::parse(&credentials_json("at-test", past_millis())).unwrap();
+        let creds =
+            ClaudeOAuthCredentials::parse(&credentials_json("at-test", past_millis())).unwrap();
         assert!(creds.is_expired());
     }
 
@@ -593,7 +626,10 @@ mod tests {
 
         let client = reqwest::Client::new();
         let result = ClaudeProvider::fetch_oauth_usage(&server.uri(), &client, "at").await;
-        assert!(matches!(result, Err(SpendPanelError::RateLimited(_, Some(120)))));
+        assert!(matches!(
+            result,
+            Err(SpendPanelError::RateLimited(_, Some(120)))
+        ));
     }
 
     #[test]
@@ -621,8 +657,14 @@ mod tests {
 
     #[test]
     fn test_plan_from_subscription() {
-        assert_eq!(ClaudeProvider::plan_from_subscription(Some("max")).name, "Claude Max");
-        assert_eq!(ClaudeProvider::plan_from_subscription(Some("pro")).name, "Claude Pro");
+        assert_eq!(
+            ClaudeProvider::plan_from_subscription(Some("max")).name,
+            "Claude Max"
+        );
+        assert_eq!(
+            ClaudeProvider::plan_from_subscription(Some("pro")).name,
+            "Claude Pro"
+        );
         assert_eq!(ClaudeProvider::plan_from_subscription(None).name, "Claude");
     }
 
@@ -642,11 +684,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let creds_path = write_temp_credentials("full-fetch", &credentials_json("at-valid", future_millis()));
+        let creds_path =
+            write_temp_credentials("full-fetch", &credentials_json("at-valid", future_millis()));
 
         let provider = ClaudeProvider::with_base_urls(&server.uri(), &server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("credentials_path".into(), creds_path.display().to_string());
+        ctx.config
+            .insert("credentials_path".into(), creds_path.display().to_string());
 
         let snap = provider.fetch_usage(&ctx).await.unwrap();
         std::fs::remove_file(&creds_path).ok();
@@ -694,11 +738,13 @@ mod tests {
             .mount(&server)
             .await;
 
-        let creds_path = write_temp_credentials("refresh", &credentials_json("at-stale", past_millis()));
+        let creds_path =
+            write_temp_credentials("refresh", &credentials_json("at-stale", past_millis()));
 
         let provider = ClaudeProvider::with_base_urls(&server.uri(), &server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("credentials_path".into(), creds_path.display().to_string());
+        ctx.config
+            .insert("credentials_path".into(), creds_path.display().to_string());
 
         let snap = provider.fetch_usage(&ctx).await.unwrap();
         assert!(snap.primary_rate_window.is_some());
@@ -728,7 +774,8 @@ mod tests {
 
         let provider = ClaudeProvider::new();
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("credentials_path".into(), creds_path.display().to_string());
+        ctx.config
+            .insert("credentials_path".into(), creds_path.display().to_string());
 
         let result = provider.fetch_usage(&ctx).await;
         std::fs::remove_file(&creds_path).ok();

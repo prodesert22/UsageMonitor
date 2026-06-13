@@ -2,8 +2,7 @@ use async_trait::async_trait;
 
 use crate::error::SpendPanelError;
 use crate::model::{
-    CostSnapshot, DailyCost, PlanInfo, RateWindow, RateWindowStatus, SpendLimit,
-    UsageSnapshot,
+    CostSnapshot, DailyCost, PlanInfo, RateWindow, RateWindowStatus, SpendLimit, UsageSnapshot,
 };
 use crate::provider::{ProviderContext, ProviderMetadata, UsageProvider};
 
@@ -75,7 +74,9 @@ impl AnthropicProvider {
     }
 
     fn api_base(&self) -> &str {
-        self.base_url.as_deref().unwrap_or("https://api.anthropic.com")
+        self.base_url
+            .as_deref()
+            .unwrap_or("https://api.anthropic.com")
     }
 
     /// Detection helper: a non-empty API key is available.
@@ -84,15 +85,15 @@ impl AnthropicProvider {
     }
 
     fn resolve_api_key(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
-        if let Some(key) = ctx.config.get("api_key") {
-            if !key.is_empty() {
-                return Ok(key.clone());
-            }
+        if let Some(key) = ctx.config.get("api_key")
+            && !key.is_empty()
+        {
+            return Ok(key.clone());
         }
-        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY") {
-            if !key.is_empty() {
-                return Ok(key);
-            }
+        if let Ok(key) = std::env::var("ANTHROPIC_API_KEY")
+            && !key.is_empty()
+        {
+            return Ok(key);
         }
         Err(SpendPanelError::AuthFailed(
             "anthropic".into(),
@@ -123,16 +124,26 @@ impl AnthropicProvider {
             .get(&url)
             .header("x-api-key", api_key)
             .header("anthropic-version", "2023-06-01")
-            .query(&[("start_date", &*week_ago), ("end_date", &*today), ("bucket_width", "1d")])
+            .query(&[
+                ("start_date", &*week_ago),
+                ("end_date", &*today),
+                ("bucket_width", "1d"),
+            ])
             .send()
             .await
             .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
 
         let status = resp.status();
-        let body = resp.text().await.map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
 
         if status == 401 {
-            return Err(SpendPanelError::AuthFailed("anthropic".into(), "invalid API key".into()));
+            return Err(SpendPanelError::AuthFailed(
+                "anthropic".into(),
+                "invalid API key".into(),
+            ));
         }
         if !status.is_success() {
             return Err(SpendPanelError::ProviderError(
@@ -141,8 +152,9 @@ impl AnthropicProvider {
             ));
         }
 
-        let report: UsageReportResponse = serde_json::from_str(&body)
-            .map_err(|e| SpendPanelError::ParseError("anthropic".into(), format!("usage report: {}", e)))?;
+        let report: UsageReportResponse = serde_json::from_str(&body).map_err(|e| {
+            SpendPanelError::ParseError("anthropic".into(), format!("usage report: {}", e))
+        })?;
         Ok(report.data)
     }
 
@@ -171,9 +183,13 @@ impl AnthropicProvider {
             return Ok(Vec::new());
         }
 
-        let body = resp.text().await.map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
-        let report: CostReportResponse = serde_json::from_str(&body)
-            .map_err(|e| SpendPanelError::ParseError("anthropic".into(), format!("cost report: {}", e)))?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+        let report: CostReportResponse = serde_json::from_str(&body).map_err(|e| {
+            SpendPanelError::ParseError("anthropic".into(), format!("cost report: {}", e))
+        })?;
         Ok(report.data)
     }
 
@@ -197,13 +213,16 @@ impl AnthropicProvider {
         let headers = resp.headers();
 
         if let (Some(limit_str), Some(rem_str)) = (
-            headers.get("x-ratelimit-limit-requests").and_then(|v| v.to_str().ok()),
-            headers.get("x-ratelimit-remaining-requests").and_then(|v| v.to_str().ok()),
-        ) {
-            if let (Ok(limit), Ok(remaining)) = (limit_str.parse::<u64>(), rem_str.parse::<u64>()) {
-                let used = limit.saturating_sub(remaining);
-                return Ok(Some(RateWindow::new(used, limit, "RPM", 1)));
-            }
+            headers
+                .get("x-ratelimit-limit-requests")
+                .and_then(|v| v.to_str().ok()),
+            headers
+                .get("x-ratelimit-remaining-requests")
+                .and_then(|v| v.to_str().ok()),
+        ) && let (Ok(limit), Ok(remaining)) = (limit_str.parse::<u64>(), rem_str.parse::<u64>())
+        {
+            let used = limit.saturating_sub(remaining);
+            return Ok(Some(RateWindow::new(used, limit, "RPM", 1)));
         }
 
         Ok(None)
@@ -223,7 +242,9 @@ impl UsageProvider for AnthropicProvider {
     }
 
     fn detect_credentials(&self) -> bool {
-        AnthropicProvider::detect_credentials_from(std::env::var("ANTHROPIC_API_KEY").ok().as_deref())
+        AnthropicProvider::detect_credentials_from(
+            std::env::var("ANTHROPIC_API_KEY").ok().as_deref(),
+        )
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
@@ -251,7 +272,8 @@ impl UsageProvider for AnthropicProvider {
             usage_ok = true;
             let mut total_in = 0u64;
             let mut total_out = 0u64;
-            let mut daily: std::collections::HashMap<String, (u64, u64)> = std::collections::HashMap::new();
+            let mut daily: std::collections::HashMap<String, (u64, u64)> =
+                std::collections::HashMap::new();
 
             for item in items {
                 total_in += item.input_tokens.unwrap_or(0);
@@ -279,7 +301,13 @@ impl UsageProvider for AnthropicProvider {
                 .into_iter()
                 .filter_map(|(ds, (inp, out))| {
                     let date = chrono::NaiveDate::parse_from_str(&ds, "%Y-%m-%d").ok()?;
-                    Some(DailyCost { date, cost: 0.0, tokens_input: Some(inp), tokens_output: Some(out), requests: None })
+                    Some(DailyCost {
+                        date,
+                        cost: 0.0,
+                        tokens_input: Some(inp),
+                        tokens_output: Some(out),
+                        requests: None,
+                    })
                 })
                 .collect();
 
@@ -294,34 +322,52 @@ impl UsageProvider for AnthropicProvider {
         }
 
         // Cost report
-        if let Ok(cost_items) = cost_res {
-            if !cost_items.is_empty() {
-                let mut daily: Vec<DailyCost> = cost_items
-                    .into_iter()
-                    .filter_map(|item| {
-                        let date = chrono::NaiveDate::parse_from_str(&item.date.unwrap_or_default(), "%Y-%m-%d").ok()?;
-                        let cost = item.cost.as_ref().and_then(|c| c.value.parse::<f64>().ok()).unwrap_or(0.0);
-                        Some(DailyCost { date, cost, tokens_input: None, tokens_output: None, requests: None })
+        if let Ok(cost_items) = cost_res
+            && !cost_items.is_empty()
+        {
+            let mut daily: Vec<DailyCost> = cost_items
+                .into_iter()
+                .filter_map(|item| {
+                    let date = chrono::NaiveDate::parse_from_str(
+                        &item.date.unwrap_or_default(),
+                        "%Y-%m-%d",
+                    )
+                    .ok()?;
+                    let cost = item
+                        .cost
+                        .as_ref()
+                        .and_then(|c| c.value.parse::<f64>().ok())
+                        .unwrap_or(0.0);
+                    Some(DailyCost {
+                        date,
+                        cost,
+                        tokens_input: None,
+                        tokens_output: None,
+                        requests: None,
                     })
-                    .collect();
-                daily.sort_by(|a, b| a.date.cmp(&b.date));
+                })
+                .collect();
+            daily.sort_by(|a, b| a.date.cmp(&b.date));
 
-                let total: f64 = daily.iter().map(|d| d.cost).sum();
-                snapshot.cost = Some(CostSnapshot {
-                    total_cost: Some(total),
-                    currency: "USD".into(),
-                    daily_costs: daily,
-                    spend_limit: Some(SpendLimit { limit: 50.0, used: total, period: "monthly".into() }),
-                });
-                snapshot.plan = Some(PlanInfo {
-                    name: "API".into(),
-                    tier: None,
-                    features: vec![],
-                    price: None,
-                    currency: Some("USD".into()),
-                    billing_period: Some("monthly".into()),
-                });
-            }
+            let total: f64 = daily.iter().map(|d| d.cost).sum();
+            snapshot.cost = Some(CostSnapshot {
+                total_cost: Some(total),
+                currency: "USD".into(),
+                daily_costs: daily,
+                spend_limit: Some(SpendLimit {
+                    limit: 50.0,
+                    used: total,
+                    period: "monthly".into(),
+                }),
+            });
+            snapshot.plan = Some(PlanInfo {
+                name: "API".into(),
+                tier: None,
+                features: vec![],
+                price: None,
+                currency: Some("USD".into()),
+                billing_period: Some("monthly".into()),
+            });
         }
 
         if snapshot.plan.is_none() && usage_ok {
@@ -397,7 +443,8 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let items = AnthropicProvider::fetch_usage_report(&server.uri(), &client, "sk-ant-test").await;
+        let items =
+            AnthropicProvider::fetch_usage_report(&server.uri(), &client, "sk-ant-test").await;
         assert!(items.is_ok());
         assert_eq!(items.unwrap().len(), 2);
     }
@@ -432,7 +479,8 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let result = AnthropicProvider::probe_rate_limits(&server.uri(), &client, "sk-ant-test").await;
+        let result =
+            AnthropicProvider::probe_rate_limits(&server.uri(), &client, "sk-ant-test").await;
         assert!(result.is_ok());
         let rl = result.unwrap().unwrap();
         assert_eq!(rl.used, Some(28));
@@ -444,7 +492,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1/messages"))
-            .respond_with(ResponseTemplate::new(200).set_body_json(serde_json::json!({"id":"m","type":"message","content":[]})))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_json(serde_json::json!({"id":"m","type":"message","content":[]})),
+            )
             .mount(&server)
             .await;
 
@@ -467,7 +518,8 @@ mod tests {
             .await;
 
         let client = reqwest::Client::new();
-        let items = AnthropicProvider::fetch_cost_report(&server.uri(), &client, "sk-ant-admin").await;
+        let items =
+            AnthropicProvider::fetch_cost_report(&server.uri(), &client, "sk-ant-admin").await;
         assert!(items.is_ok());
         assert_eq!(items.unwrap().len(), 1);
     }

@@ -1,12 +1,16 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
 use usage_monitor_core::config::AppConfig;
-use usage_monitor_core::provider::registry::ProviderRegistry;
 use usage_monitor_core::provider::ProviderContext;
+use usage_monitor_core::provider::registry::ProviderRegistry;
 use usage_monitor_core::{ProviderState, RateWindow, UsageSnapshot};
 
 #[derive(Parser)]
-#[command(name = "usage-monitor", about = "AI API usage monitor for your terminal", version)]
+#[command(
+    name = "usage-monitor",
+    about = "AI API usage monitor for your terminal",
+    version
+)]
 struct Cli {
     #[command(subcommand)]
     command: Command,
@@ -31,6 +35,12 @@ enum Command {
         /// Provider ID (e.g. claude, codex, anthropic, openai)
         provider: String,
     },
+    /// Get or set provider configuration values
+    #[command(subcommand)]
+    Config(ConfigCmd),
+    /// OpenCode Go provider commands (workspace management)
+    #[command(name = "opencode-go", subcommand)]
+    OpencodeGo(OpencodeGoCmd),
     /// Fetch usage for a provider, or for all enabled providers when omitted
     Fetch {
         /// Provider ID (e.g. claude, codex, anthropic, openai)
@@ -46,6 +56,45 @@ enum Command {
         credentials_path: Option<String>,
     },
 }
+
+#[derive(Subcommand)]
+enum ConfigCmd {
+    /// Set a config value, e.g. `config set opencode-go cookie "<Cookie header>"`
+    Set {
+        provider: String,
+        key: String,
+        value: String,
+    },
+    /// Show a provider's config (secret values are masked)
+    Get { provider: String },
+    /// Remove a config key
+    Unset { provider: String, key: String },
+}
+
+#[derive(Subcommand)]
+enum OpencodeGoCmd {
+    /// Manage tracked workspaces (accepts wrk_... ids or dashboard URLs)
+    #[command(subcommand)]
+    Workspace(WorkspaceCmd),
+}
+
+#[derive(Subcommand)]
+enum WorkspaceCmd {
+    /// Add a workspace: `opencode-go workspace add wrk_xxx` or a dashboard URL
+    /// like `https://opencode.ai/workspace/wrk_xxx/go`. The optional name
+    /// overrides the one discovered from the dashboard.
+    Add {
+        workspace: String,
+        /// Display name (e.g. `opencode-go workspace add wrk_xxx "Production"`)
+        name: Option<String>,
+    },
+    /// Remove a workspace
+    Remove { workspace: String },
+    /// List configured workspaces
+    List,
+}
+
+const WORKSPACE_PROVIDER: &str = "opencode-go";
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -67,64 +116,219 @@ async fn main() -> Result<()> {
                     ProviderState::AutoEnabled => "enabled (auto)",
                     ProviderState::AutoDisabled => "disabled (auto)",
                 };
-                println!("{:<12} {:<16} {} — {}", meta.id, label, meta.name, meta.description);
+                println!(
+                    "{:<12} {:<16} {} — {}",
+                    meta.id, label, meta.name, meta.description
+                );
             }
         }
         Command::Enable { provider } => set_enabled(&registry, config, &provider, Some(true))?,
         Command::Disable { provider } => set_enabled(&registry, config, &provider, Some(false))?,
         Command::Auto { provider } => set_enabled(&registry, config, &provider, None)?,
+        Command::Config(cmd) => handle_config(&registry, config, cmd)?,
+        Command::OpencodeGo(OpencodeGoCmd::Workspace(cmd)) => handle_workspace(config, cmd)?,
         Command::Fetch {
             provider,
             json,
             api_key,
             credentials_path,
-        } => {
-            let mut ctx = ProviderContext::new();
-            if let Some(key) = api_key {
-                ctx.config.insert("api_key".into(), key);
-            }
-            if let Some(path) = credentials_path {
-                ctx.config.insert("credentials_path".into(), path);
-            }
-
-            match provider {
-                Some(id) => {
-                    if registry.provider_state(&id, &config) == Some(ProviderState::Disabled) {
-                        anyhow::bail!(
-                            "provider '{}' is disabled; enable it with `usage-monitor-cli enable {}`",
-                            id,
-                            id
-                        );
-                    }
-                    let snapshot = registry
-                        .fetch(&id, &ctx)
-                        .await
-                        .map_err(|e| anyhow::anyhow!("{}", e))?;
-                    print_result(&snapshot, json)?;
+        } => match provider {
+            Some(id) => {
+                if registry.provider_state(&id, &config) == Some(ProviderState::Disabled) {
+                    anyhow::bail!(
+                        "provider '{}' is disabled; enable it with `usage-monitor-cli enable {}`",
+                        id,
+                        id
+                    );
                 }
-                None => {
-                    let ids = registry.enabled_ids(&config);
-                    if ids.is_empty() {
-                        println!("No enabled providers. Use `enable <provider>` or set up credentials.");
-                        return Ok(());
+                let ctx = provider_context(
+                    &config,
+                    &id,
+                    api_key.as_deref(),
+                    credentials_path.as_deref(),
+                );
+                let snapshot = registry
+                    .fetch(&id, &ctx)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("{}", e))?;
+                print_result(&snapshot, json)?;
+            }
+            None => {
+                let ids = registry.enabled_ids(&config);
+                if ids.is_empty() {
+                    println!(
+                        "No enabled providers. Use `enable <provider>` or set up credentials."
+                    );
+                    return Ok(());
+                }
+                let mut first = true;
+                for id in ids {
+                    if !first {
+                        println!();
                     }
-                    let mut first = true;
-                    for id in ids {
-                        if !first {
-                            println!();
-                        }
-                        first = false;
-                        match registry.fetch(&id, &ctx).await {
-                            Ok(snapshot) => print_result(&snapshot, json)?,
-                            Err(e) => println!("{}: error: {}", id, e),
-                        }
+                    first = false;
+                    let ctx = provider_context(
+                        &config,
+                        &id,
+                        api_key.as_deref(),
+                        credentials_path.as_deref(),
+                    );
+                    match registry.fetch(&id, &ctx).await {
+                        Ok(snapshot) => print_result(&snapshot, json)?,
+                        Err(e) => println!("{}: error: {}", id, e),
+                    }
+                }
+            }
+        },
+    }
+
+    Ok(())
+}
+
+fn save_config(config: &AppConfig) -> Result<std::path::PathBuf> {
+    let path = AppConfig::default_path()
+        .ok_or_else(|| anyhow::anyhow!("cannot resolve config path (HOME not set)"))?;
+    config
+        .save_to_path(&path)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    Ok(path)
+}
+
+/// Masks secret-looking config values for display.
+fn mask_value(key: &str, value: &str) -> String {
+    let secret = ["cookie", "api_key", "token", "access_token"].contains(&key);
+    if secret && value.len() > 12 {
+        format!("{}… ({} chars)", &value[..8], value.len())
+    } else {
+        value.to_string()
+    }
+}
+
+fn handle_config(registry: &ProviderRegistry, mut config: AppConfig, cmd: ConfigCmd) -> Result<()> {
+    match cmd {
+        ConfigCmd::Set {
+            provider,
+            key,
+            value,
+        } => {
+            if registry.get(&provider).is_none() {
+                anyhow::bail!("unknown provider '{}'", provider);
+            }
+            config.set_provider_config(&provider, &key, &value);
+            let path = save_config(&config)?;
+            println!(
+                "{}.{} = {} ({})",
+                provider,
+                key,
+                mask_value(&key, &value),
+                path.display()
+            );
+        }
+        ConfigCmd::Get { provider } => {
+            if registry.get(&provider).is_none() {
+                anyhow::bail!("unknown provider '{}'", provider);
+            }
+            let token = config.provider_token(&provider);
+            let map = config.provider_config(&provider);
+            let mut printed = false;
+            if let Some(token) = token {
+                println!("token = {}", mask_value("token", token));
+                printed = true;
+            }
+            if let Some(map) = map {
+                let mut keys: Vec<&String> = map.keys().collect();
+                keys.sort();
+                for key in keys {
+                    println!("{} = {}", key, mask_value(key, &map[key]));
+                    printed = true;
+                }
+            }
+            if !printed {
+                println!("(no config for '{}')", provider);
+            }
+        }
+        ConfigCmd::Unset { provider, key } => {
+            config.unset_provider_config(&provider, &key);
+            let path = save_config(&config)?;
+            println!("{}.{} removed ({})", provider, key, path.display());
+        }
+    }
+    Ok(())
+}
+
+fn handle_workspace(mut config: AppConfig, cmd: WorkspaceCmd) -> Result<()> {
+    use usage_monitor_core::provider::opencode_go;
+
+    let current = config.provider_workspaces(WORKSPACE_PROVIDER).to_vec();
+
+    match cmd {
+        WorkspaceCmd::Add { workspace, name } => {
+            let ids = opencode_go::add_workspace(&current, &workspace, name.as_deref())
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            config.set_provider_workspaces(WORKSPACE_PROVIDER, ids.clone());
+            let path = save_config(&config)?;
+            println!("workspaces = [{}] ({})", ids.join(", "), path.display());
+        }
+        WorkspaceCmd::Remove { workspace } => {
+            let ids = opencode_go::remove_workspace(&current, &workspace)
+                .map_err(|e| anyhow::anyhow!("{}", e))?;
+            config.set_provider_workspaces(WORKSPACE_PROVIDER, ids.clone());
+            let path = save_config(&config)?;
+            if ids.is_empty() {
+                println!("workspaces = [] — auto-discovery ({})", path.display());
+            } else {
+                println!("workspaces = [{}] ({})", ids.join(", "), path.display());
+            }
+        }
+        WorkspaceCmd::List => {
+            if current.is_empty() {
+                println!("(no workspaces configured — auto-discovery will be used)");
+            } else {
+                for entry in &current {
+                    match opencode_go::parse_workspace_entry(entry) {
+                        Some(ws) => match &ws.name {
+                            Some(name) => println!("{:<30} {}", ws.id, name),
+                            None => println!("{}", ws.id),
+                        },
+                        None => println!("{}", entry),
                     }
                 }
             }
         }
     }
-
     Ok(())
+}
+
+/// Builds the fetch context for a provider: values from the config file's
+/// `[providers.<id>.config]` section, overridden by CLI flags.
+fn provider_context(
+    config: &AppConfig,
+    provider: &str,
+    api_key: Option<&str>,
+    credentials_path: Option<&str>,
+) -> ProviderContext {
+    let mut ctx = ProviderContext::new();
+    if let Some(settings) = config.providers.get(provider) {
+        for (k, v) in &settings.config {
+            ctx.config.insert(k.clone(), v.clone());
+        }
+        if let Some(token) = &settings.token {
+            ctx.config.insert("token".into(), token.clone());
+        }
+        // Workspace array bridges into the provider as a comma-separated value.
+        if !settings.workspaces.is_empty() {
+            ctx.config
+                .insert("workspaces".into(), settings.workspaces.join(","));
+        }
+    }
+    if let Some(key) = api_key {
+        ctx.config.insert("api_key".into(), key.to_string());
+    }
+    if let Some(path) = credentials_path {
+        ctx.config
+            .insert("credentials_path".into(), path.to_string());
+    }
+    ctx
 }
 
 fn set_enabled(
@@ -170,7 +374,10 @@ fn print_result(snapshot: &UsageSnapshot, json: bool) -> Result<()> {
 
 fn print_snapshot(snap: &UsageSnapshot) {
     println!("Provider: {}", snap.provider_id);
-    println!("Collected at: {}", snap.collected_at.format("%Y-%m-%d %H:%M:%S UTC"));
+    println!(
+        "Collected at: {}",
+        snap.collected_at.format("%Y-%m-%d %H:%M:%S UTC")
+    );
 
     if let Some(plan) = &snap.plan {
         println!("Plan: {}", plan.name);
@@ -192,7 +399,10 @@ fn print_snapshot(snap: &UsageSnapshot) {
     if let Some(credits) = &snap.credits {
         match (credits.used, credits.total) {
             (Some(used), Some(total)) => {
-                println!("Credits: {:.2}/{:.2} {} used", used, total, credits.currency)
+                println!(
+                    "Credits: {:.2}/{:.2} {} used",
+                    used, total, credits.currency
+                )
             }
             _ => println!("Credits: {:.2} {}", credits.balance, credits.currency),
         }
@@ -207,7 +417,10 @@ fn print_snapshot(snap: &UsageSnapshot) {
                 (Some(i), Some(o)) => format!("  in: {} out: {}", i, o),
                 _ => String::new(),
             };
-            println!("  {}  {:.2} {}{}", day.date, day.cost, cost.currency, tokens);
+            println!(
+                "  {}  {:.2} {}{}",
+                day.date, day.cost, cost.currency, tokens
+            );
         }
     }
 }

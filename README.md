@@ -17,29 +17,48 @@ A Linux port of [CodexBar](https://github.com/steipete/CodexBar) by
 | `codex`     | Codex / ChatGPT plan          | Codex CLI OAuth (`~/.codex/auth.json`)             |
 | `anthropic` | Anthropic API                 | `ANTHROPIC_API_KEY` or `--api-key`                 |
 | `openai`    | OpenAI API                    | `OPENAI_API_KEY` or `--api-key`                    |
+| `opencode-go` | OpenCode Go workspaces      | Manual session cookie ([docs](docs/providers/opencode-go.md)) |
 
-## Usage
+## Commands
+
+| Command | Description |
+|---------|-------------|
+| `list` | List providers with their resolved state (`enabled`, `disabled`, or `(auto)` from credential detection) |
+| `fetch [provider]` | Fetch usage. Without a provider, fetches all enabled providers; with one, fetches it (refused if explicitly disabled) |
+| `enable <provider>` | Force a provider on, regardless of detection |
+| `disable <provider>` | Force a provider off; it is skipped by `fetch` and direct fetches are refused |
+| `auto <provider>` | Remove the explicit toggle and return to credential auto-detection |
+| `config set <provider> <key> <value>` | Set a provider config value (e.g. `token`, `api_key`, `credentials_path`) |
+| `config get <provider>` | Show a provider's config; secret values are masked |
+| `config unset <provider> <key>` | Remove a config key |
+| `opencode-go workspace add <id\|url> [name]` | Add an OpenCode Go workspace; accepts a `wrk_...` id or the dashboard URL, with an optional display name |
+| `opencode-go workspace remove <id\|url>` | Remove a workspace; an empty list returns to auto-discovery |
+| `opencode-go workspace list` | List configured workspaces |
+
+All state persists in `~/.config/usage-monitor/config.toml`. Providers are
+auto-enabled when their credentials are detected (credential files for
+`claude`/`codex`, API key env vars for `anthropic`/`openai`); explicit
+toggles always win.
+
+### Examples
 
 ```bash
-# List providers and their enabled state
-usage-monitor-cli list
-
-# Providers are auto-enabled when their credentials are detected.
-# Override with an explicit toggle (persisted in
-# ~/.config/usage-monitor/config.toml), or return to auto-detection:
-usage-monitor-cli enable openai
-usage-monitor-cli disable codex
-usage-monitor-cli auto codex
-
-# Fetch all enabled providers
+# Everything that is enabled, at a glance
 usage-monitor-cli fetch
 
 # Claude subscription usage (reads Claude Code CLI credentials)
 usage-monitor-cli fetch claude
 
-# Anthropic / OpenAI API usage
+# One-off fetch with an explicit key
 usage-monitor-cli fetch anthropic --api-key sk-ant-...
-usage-monitor-cli fetch openai
+
+# Persist an API key instead of passing the flag every time
+usage-monitor-cli config set anthropic api_key sk-ant-...
+
+# OpenCode Go: manual token + workspaces (see docs/providers/opencode-go.md)
+usage-monitor-cli config set opencode-go token "<Cookie header>"
+usage-monitor-cli enable opencode-go
+usage-monitor-cli opencode-go workspace add https://opencode.ai/workspace/wrk_xxx/go
 
 # Machine-readable output
 usage-monitor-cli fetch claude --json
@@ -50,7 +69,7 @@ usage-monitor-cli fetch claude --json
 ```
 usage-monitor-core/     Core library (models, providers, fetching)
 usage-monitor-cli/      Command-line interface
-docs/clean-room/        Clean room provider specifications
+docs/                   Provider extraction specifications
 ```
 
 ## Build

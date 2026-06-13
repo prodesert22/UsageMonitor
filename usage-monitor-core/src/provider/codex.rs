@@ -11,7 +11,9 @@ use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 
 use crate::error::SpendPanelError;
-use crate::model::{CreditsSnapshot, NamedRateWindow, PlanInfo, RateWindow, RateWindowStatus, UsageSnapshot};
+use crate::model::{
+    CreditsSnapshot, NamedRateWindow, PlanInfo, RateWindow, RateWindowStatus, UsageSnapshot,
+};
 use crate::provider::{ProviderContext, ProviderMetadata, UsageProvider};
 
 /// Public OAuth client ID of the Codex CLI (not a secret).
@@ -72,8 +74,9 @@ impl CodexOAuthCredentials {
 
     /// Parses the Codex CLI auth.json.
     pub fn parse(raw: &str) -> Result<Self, SpendPanelError> {
-        let file: AuthFile = serde_json::from_str(raw)
-            .map_err(|e| SpendPanelError::ParseError("codex".into(), format!("auth.json: {}", e)))?;
+        let file: AuthFile = serde_json::from_str(raw).map_err(|e| {
+            SpendPanelError::ParseError("codex".into(), format!("auth.json: {}", e))
+        })?;
         let tokens = file.tokens.ok_or_else(|| {
             SpendPanelError::AuthFailed(
                 "codex".into(),
@@ -238,7 +241,10 @@ impl CodexProvider {
             .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
 
         let status = resp.status();
-        let body = resp.text().await.map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
         if !status.is_success() {
             return Err(SpendPanelError::AuthFailed(
                 "codex".into(),
@@ -246,8 +252,9 @@ impl CodexProvider {
             ));
         }
 
-        let token: TokenRefreshResponse = serde_json::from_str(&body)
-            .map_err(|e| SpendPanelError::ParseError("codex".into(), format!("token refresh: {}", e)))?;
+        let token: TokenRefreshResponse = serde_json::from_str(&body).map_err(|e| {
+            SpendPanelError::ParseError("codex".into(), format!("token refresh: {}", e))
+        })?;
 
         let refreshed = CodexOAuthCredentials {
             access_token: token.access_token,
@@ -255,10 +262,10 @@ impl CodexProvider {
             account_id: creds.account_id.clone(),
         };
 
-        if let Some(path) = persist_path {
-            if let Err(e) = Self::persist_credentials(path, &refreshed, token.id_token.as_deref()) {
-                tracing::warn!("failed to persist refreshed codex credentials: {}", e);
-            }
+        if let Some(path) = persist_path
+            && let Err(e) = Self::persist_credentials(path, &refreshed, token.id_token.as_deref())
+        {
+            tracing::warn!("failed to persist refreshed codex credentials: {}", e);
         }
 
         Ok(refreshed)
@@ -272,8 +279,9 @@ impl CodexProvider {
     ) -> Result<(), SpendPanelError> {
         let raw = std::fs::read_to_string(path)
             .map_err(|e| SpendPanelError::ConfigError(format!("read auth.json: {}", e)))?;
-        let mut file: AuthFile = serde_json::from_str(&raw)
-            .map_err(|e| SpendPanelError::ParseError("codex".into(), format!("auth.json: {}", e)))?;
+        let mut file: AuthFile = serde_json::from_str(&raw).map_err(|e| {
+            SpendPanelError::ParseError("codex".into(), format!("auth.json: {}", e))
+        })?;
 
         let mut tokens = file.tokens.take().unwrap_or(TokensSection {
             id_token: None,
@@ -290,8 +298,9 @@ impl CodexProvider {
         file.tokens = Some(tokens);
         file.last_refresh = Some(Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true));
 
-        let serialized = serde_json::to_string(&file)
-            .map_err(|e| SpendPanelError::ParseError("codex".into(), format!("auth.json: {}", e)))?;
+        let serialized = serde_json::to_string(&file).map_err(|e| {
+            SpendPanelError::ParseError("codex".into(), format!("auth.json: {}", e))
+        })?;
         std::fs::write(path, serialized)
             .map_err(|e| SpendPanelError::ConfigError(format!("write auth.json: {}", e)))
     }
@@ -332,7 +341,10 @@ impl CodexProvider {
             return Err(SpendPanelError::RateLimited("codex".into(), retry_after));
         }
 
-        let body = resp.text().await.map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
         if !status.is_success() {
             return Err(SpendPanelError::ProviderError(
                 "codex".into(),
@@ -353,7 +365,9 @@ impl CodexProvider {
             limit: None,
             used: None,
             remaining: None,
-            resets_at: w.reset_at.and_then(|s| DateTime::<Utc>::from_timestamp(s, 0)),
+            resets_at: w
+                .reset_at
+                .and_then(|s| DateTime::<Utc>::from_timestamp(s, 0)),
             status: RateWindowStatus::from_ratio(ratio),
         }
     }
@@ -394,10 +408,12 @@ impl CodexProvider {
 
         if let Some(rl) = &usage.rate_limit {
             if let Some(w) = &rl.primary_window {
-                snapshot.primary_rate_window = Some(Self::rate_window(&Self::window_label(w, "Session"), w));
+                snapshot.primary_rate_window =
+                    Some(Self::rate_window(&Self::window_label(w, "Session"), w));
             }
             if let Some(w) = &rl.secondary_window {
-                snapshot.secondary_rate_window = Some(Self::rate_window(&Self::window_label(w, "Weekly"), w));
+                snapshot.secondary_rate_window =
+                    Some(Self::rate_window(&Self::window_label(w, "Weekly"), w));
             }
         }
 
@@ -417,15 +433,15 @@ impl CodexProvider {
             }
         }
 
-        if let Some(credits) = &usage.credits {
-            if credits.has_credits.unwrap_or(false) {
-                let balance = credits
-                    .balance
-                    .as_deref()
-                    .and_then(|b| b.parse::<f64>().ok())
-                    .unwrap_or(0.0);
-                snapshot.credits = Some(CreditsSnapshot::new(balance, "credits"));
-            }
+        if let Some(credits) = &usage.credits
+            && credits.has_credits.unwrap_or(false)
+        {
+            let balance = credits
+                .balance
+                .as_deref()
+                .and_then(|b| b.parse::<f64>().ok())
+                .unwrap_or(0.0);
+            snapshot.credits = Some(CreditsSnapshot::new(balance, "credits"));
         }
 
         snapshot.plan = Some(Self::plan_from_type(usage.plan_type.as_deref()));
@@ -471,8 +487,13 @@ impl UsageProvider for CodexProvider {
         match Self::fetch_wham_usage(self.api_base(), &client, &creds).await {
             Ok(usage) => Ok(Self::snapshot_from_usage(&usage)),
             Err(SpendPanelError::AuthFailed(_, _)) if creds.refresh_token.is_some() => {
-                let refreshed =
-                    Self::refresh_token(self.token_base(), &client, &creds, persist_path.as_deref()).await?;
+                let refreshed = Self::refresh_token(
+                    self.token_base(),
+                    &client,
+                    &creds,
+                    persist_path.as_deref(),
+                )
+                .await?;
                 let usage = Self::fetch_wham_usage(self.api_base(), &client, &refreshed).await?;
                 Ok(Self::snapshot_from_usage(&usage))
             }
@@ -492,7 +513,11 @@ mod tests {
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     fn write_temp_auth(name: &str, contents: &str) -> PathBuf {
-        let path = std::env::temp_dir().join(format!("usage-monitor-codex-{}-{}.json", name, std::process::id()));
+        let path = std::env::temp_dir().join(format!(
+            "usage-monitor-codex-{}-{}.json",
+            name,
+            std::process::id()
+        ));
         std::fs::write(&path, contents).unwrap();
         path
     }
@@ -570,9 +595,21 @@ mod tests {
 
     #[test]
     fn test_window_label_from_size() {
-        let session = WhamWindow { used_percent: None, limit_window_seconds: Some(18000), reset_at: None };
-        let weekly = WhamWindow { used_percent: None, limit_window_seconds: Some(604800), reset_at: None };
-        let odd = WhamWindow { used_percent: None, limit_window_seconds: None, reset_at: None };
+        let session = WhamWindow {
+            used_percent: None,
+            limit_window_seconds: Some(18000),
+            reset_at: None,
+        };
+        let weekly = WhamWindow {
+            used_percent: None,
+            limit_window_seconds: Some(604800),
+            reset_at: None,
+        };
+        let odd = WhamWindow {
+            used_percent: None,
+            limit_window_seconds: None,
+            reset_at: None,
+        };
         assert_eq!(CodexProvider::window_label(&session, "x"), "Session (5h)");
         assert_eq!(CodexProvider::window_label(&weekly, "x"), "Weekly");
         assert_eq!(CodexProvider::window_label(&odd, "fallback"), "fallback");
@@ -580,8 +617,14 @@ mod tests {
 
     #[test]
     fn test_plan_from_type() {
-        assert_eq!(CodexProvider::plan_from_type(Some("plus")).name, "ChatGPT Plus");
-        assert_eq!(CodexProvider::plan_from_type(Some("pro")).name, "ChatGPT Pro");
+        assert_eq!(
+            CodexProvider::plan_from_type(Some("plus")).name,
+            "ChatGPT Plus"
+        );
+        assert_eq!(
+            CodexProvider::plan_from_type(Some("pro")).name,
+            "ChatGPT Pro"
+        );
         assert_eq!(CodexProvider::plan_from_type(None).name, "ChatGPT");
     }
 
@@ -656,7 +699,10 @@ mod tests {
             account_id: None,
         };
         let result = CodexProvider::fetch_wham_usage(&server.uri(), &client, &creds).await;
-        assert!(matches!(result, Err(SpendPanelError::RateLimited(_, Some(60)))));
+        assert!(matches!(
+            result,
+            Err(SpendPanelError::RateLimited(_, Some(60)))
+        ));
     }
 
     #[tokio::test]
@@ -674,7 +720,8 @@ mod tests {
 
         let provider = CodexProvider::with_base_urls(&server.uri(), &server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("credentials_path".into(), auth_path.display().to_string());
+        ctx.config
+            .insert("credentials_path".into(), auth_path.display().to_string());
 
         let snap = provider.fetch_usage(&ctx).await.unwrap();
         std::fs::remove_file(&auth_path).ok();
@@ -732,7 +779,8 @@ mod tests {
 
         let provider = CodexProvider::with_base_urls(&server.uri(), &server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("credentials_path".into(), auth_path.display().to_string());
+        ctx.config
+            .insert("credentials_path".into(), auth_path.display().to_string());
 
         let snap = provider.fetch_usage(&ctx).await.unwrap();
         assert!(snap.primary_rate_window.is_some());

@@ -109,15 +109,15 @@ impl OpenAIProvider {
 
     /// Extracts the API key from context or environment variable.
     fn resolve_api_key(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
-        if let Some(key) = ctx.config.get("api_key") {
-            if !key.is_empty() {
-                return Ok(key.clone());
-            }
+        if let Some(key) = ctx.config.get("api_key")
+            && !key.is_empty()
+        {
+            return Ok(key.clone());
         }
-        if let Ok(key) = std::env::var("OPENAI_API_KEY") {
-            if !key.is_empty() {
-                return Ok(key);
-            }
+        if let Ok(key) = std::env::var("OPENAI_API_KEY")
+            && !key.is_empty()
+        {
+            return Ok(key);
         }
         Err(SpendPanelError::AuthFailed(
             "openai".into(),

@@ -116,8 +116,8 @@ impl UsageSnapshot {
 }
 
 // Re-export from submodules to avoid circular dependency
-use super::credits::CreditsSnapshot;
 use super::cost::CostSnapshot;
+use super::credits::CreditsSnapshot;
 
 /// Plan/subscription information.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

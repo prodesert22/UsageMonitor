@@ -1,8 +1,9 @@
-pub mod registry;
 pub mod anthropic;
 pub mod claude;
 pub mod codex;
 pub mod openai;
+pub mod opencode_go;
+pub mod registry;
 
 use async_trait::async_trait;
 use std::collections::HashMap;

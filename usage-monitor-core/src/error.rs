@@ -47,12 +47,18 @@ mod tests {
     #[test]
     fn test_rate_limited_message_zero_seconds() {
         let e = SpendPanelError::RateLimited("claude".into(), Some(0));
-        assert_eq!(e.to_string(), "Rate limited by 'claude', try again in a few minutes");
+        assert_eq!(
+            e.to_string(),
+            "Rate limited by 'claude', try again in a few minutes"
+        );
     }
 
     #[test]
     fn test_rate_limited_message_no_seconds() {
         let e = SpendPanelError::RateLimited("codex".into(), None);
-        assert_eq!(e.to_string(), "Rate limited by 'codex', try again in a few minutes");
+        assert_eq!(
+            e.to_string(),
+            "Rate limited by 'codex', try again in a few minutes"
+        );
     }
 }

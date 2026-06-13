@@ -68,11 +68,11 @@ fn test_list_shows_all_providers_auto_disabled_without_credentials() {
     let out = env.run(&["list"]);
     assert!(out.status.success());
     let text = stdout(&out);
-    for id in ["anthropic", "claude", "codex", "openai"] {
+    for id in ["anthropic", "claude", "codex", "openai", "opencode-go"] {
         assert!(text.contains(id), "missing {} in: {}", id, text);
     }
     // Fresh HOME has no credentials → everything auto-disabled.
-    assert_eq!(text.matches("disabled (auto)").count(), 4, "got: {}", text);
+    assert_eq!(text.matches("disabled (auto)").count(), 5, "got: {}", text);
 }
 
 #[test]
@@ -81,8 +81,12 @@ fn test_list_auto_enables_detected_credentials() {
     env.write_claude_credentials();
     let out = env.run(&["list"]);
     let text = stdout(&out);
-    assert!(text.contains("claude       enabled (auto)"), "got: {}", text);
-    assert_eq!(text.matches("disabled (auto)").count(), 3, "got: {}", text);
+    assert!(
+        text.contains("claude       enabled (auto)"),
+        "got: {}",
+        text
+    );
+    assert_eq!(text.matches("disabled (auto)").count(), 4, "got: {}", text);
 }
 
 #[test]
@@ -118,19 +122,27 @@ fn test_disable_blocks_explicit_fetch() {
 fn test_auto_clears_explicit_toggle() {
     let env = TestEnv::new("auto-clear");
     env.run(&["disable", "claude"]);
-    assert!(std::fs::read_to_string(env.config_path())
-        .unwrap()
-        .contains("enabled = false"));
+    assert!(
+        std::fs::read_to_string(env.config_path())
+            .unwrap()
+            .contains("enabled = false")
+    );
 
     let out = env.run(&["auto", "claude"]);
     assert!(out.status.success());
     assert!(stdout(&out).contains("auto (currently disabled)"));
-    assert!(!std::fs::read_to_string(env.config_path())
-        .unwrap()
-        .contains("enabled = false"));
+    assert!(
+        !std::fs::read_to_string(env.config_path())
+            .unwrap()
+            .contains("enabled = false")
+    );
 
     let text = stdout(&env.run(&["list"]));
-    assert!(text.contains("claude       disabled (auto)"), "got: {}", text);
+    assert!(
+        text.contains("claude       disabled (auto)"),
+        "got: {}",
+        text
+    );
 }
 
 #[test]
@@ -139,6 +151,100 @@ fn test_fetch_all_without_enabled_providers() {
     let out = env.run(&["fetch"]);
     assert!(out.status.success());
     assert!(stdout(&out).contains("No enabled providers"));
+}
+
+#[test]
+fn test_config_set_get_unset() {
+    let env = TestEnv::new("config-set");
+    let out = env.run(&[
+        "config",
+        "set",
+        "opencode-go",
+        "token",
+        "session=secret-cookie-value",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    // Secret values are masked in output.
+    assert!(!stdout(&out).contains("secret-cookie-value"));
+
+    // Stored flat in [providers.opencode-go], no .config subtable.
+    let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(
+        raw.contains(r#"token = "session=secret-cookie-value""#),
+        "got: {}",
+        raw
+    );
+    assert!(
+        !raw.contains("[providers.opencode-go.config]"),
+        "got: {}",
+        raw
+    );
+
+    let out = env.run(&["config", "get", "opencode-go"]);
+    assert!(stdout(&out).contains("token = session="));
+    assert!(!stdout(&out).contains("secret-cookie-value"));
+
+    env.run(&["config", "unset", "opencode-go", "token"]);
+    let out = env.run(&["config", "get", "opencode-go"]);
+    assert!(stdout(&out).contains("no config"));
+}
+
+#[test]
+fn test_config_set_unknown_provider_fails() {
+    let env = TestEnv::new("config-unknown");
+    let out = env.run(&["config", "set", "ghost", "key", "v"]);
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("unknown provider 'ghost'"));
+}
+
+#[test]
+fn test_workspace_add_remove_list() {
+    let env = TestEnv::new("workspace");
+    let out = env.run(&["opencode-go", "workspace", "add", "wrk_first"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    // URL form is accepted and normalized.
+    let out = env.run(&[
+        "opencode-go",
+        "workspace",
+        "add",
+        "https://opencode.ai/workspace/wrk_second/go",
+    ]);
+    assert!(
+        stdout(&out).contains("wrk_first, wrk_second"),
+        "got: {}",
+        stdout(&out)
+    );
+
+    // Persisted as a real TOML array (pretty serializer emits it multi-line).
+    let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(raw.contains("workspaces = ["), "got: {}", raw);
+    assert!(raw.contains(r#""wrk_first""#), "got: {}", raw);
+    assert!(raw.contains(r#""wrk_second""#), "got: {}", raw);
+
+    let out = env.run(&["opencode-go", "workspace", "list"]);
+    assert_eq!(stdout(&out).trim(), "wrk_first\nwrk_second");
+
+    env.run(&["opencode-go", "workspace", "remove", "wrk_first"]);
+    let out = env.run(&["opencode-go", "workspace", "list"]);
+    assert_eq!(stdout(&out).trim(), "wrk_second");
+
+    env.run(&["opencode-go", "workspace", "remove", "wrk_second"]);
+    let out = env.run(&["opencode-go", "workspace", "list"]);
+    assert!(stdout(&out).contains("auto-discovery"));
+
+    // Optional display name persists as `id=Name` and shows in list.
+    env.run(&["opencode-go", "workspace", "add", "wrk_named", "Production"]);
+    let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(raw.contains(r#""wrk_named=Production""#), "got: {}", raw);
+    let out = env.run(&["opencode-go", "workspace", "list"]);
+    assert!(stdout(&out).contains("wrk_named"), "got: {}", stdout(&out));
+    assert!(stdout(&out).contains("Production"), "got: {}", stdout(&out));
+    env.run(&["opencode-go", "workspace", "remove", "wrk_named"]);
+
+    // Invalid reference fails instead of silently wiping.
+    let out = env.run(&["opencode-go", "workspace", "add", "not-a-workspace"]);
+    assert!(!out.status.success());
 }
 
 #[test]

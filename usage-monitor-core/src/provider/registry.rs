@@ -23,6 +23,7 @@ impl ProviderRegistry {
         reg.register(Box::new(super::anthropic::AnthropicProvider::new()));
         reg.register(Box::new(super::claude::ClaudeProvider::new()));
         reg.register(Box::new(super::codex::CodexProvider::new()));
+        reg.register(Box::new(super::opencode_go::OpenCodeGoProvider::new()));
         reg.register(Box::new(super::openai::OpenAIProvider::new()));
         reg
     }
@@ -45,10 +46,7 @@ impl ProviderRegistry {
 
     /// Returns metadata for all providers.
     pub fn all_metadata(&self) -> Vec<&ProviderMetadata> {
-        self.providers
-            .values()
-            .map(|p| p.metadata())
-            .collect()
+        self.providers.values().map(|p| p.metadata()).collect()
     }
 
     /// Fetches usage from a specific provider.
@@ -180,7 +178,10 @@ mod tests {
             _ctx: &ProviderContext,
         ) -> Result<UsageSnapshot, SpendPanelError> {
             if self.should_fail {
-                Err(SpendPanelError::ProviderError(self.id().into(), "mock fail".into()))
+                Err(SpendPanelError::ProviderError(
+                    self.id().into(),
+                    "mock fail".into(),
+                ))
             } else {
                 Ok(UsageSnapshot::new(self.id()))
             }
@@ -295,10 +296,22 @@ mod tests {
         cfg.set_provider_enabled("forced-on", true);
         cfg.set_provider_enabled("forced-off", false);
 
-        assert_eq!(reg.provider_state("auto-on", &cfg), Some(ProviderState::AutoEnabled));
-        assert_eq!(reg.provider_state("auto-off", &cfg), Some(ProviderState::AutoDisabled));
-        assert_eq!(reg.provider_state("forced-on", &cfg), Some(ProviderState::Enabled));
-        assert_eq!(reg.provider_state("forced-off", &cfg), Some(ProviderState::Disabled));
+        assert_eq!(
+            reg.provider_state("auto-on", &cfg),
+            Some(ProviderState::AutoEnabled)
+        );
+        assert_eq!(
+            reg.provider_state("auto-off", &cfg),
+            Some(ProviderState::AutoDisabled)
+        );
+        assert_eq!(
+            reg.provider_state("forced-on", &cfg),
+            Some(ProviderState::Enabled)
+        );
+        assert_eq!(
+            reg.provider_state("forced-off", &cfg),
+            Some(ProviderState::Disabled)
+        );
         assert_eq!(reg.provider_state("ghost", &cfg), None);
 
         assert_eq!(reg.enabled_ids(&cfg), vec!["auto-on", "forced-on"]);
