@@ -24,7 +24,7 @@ A Linux port of [CodexBar](https://github.com/steipete/CodexBar) by
 | Command | Description |
 |---------|-------------|
 | `list` | List providers with their resolved state (`enabled`, `disabled`, or `(auto)` from credential detection) |
-| `fetch [provider]` | Fetch usage. Without a provider, fetches all enabled providers; with one, fetches it (refused if explicitly disabled) |
+| `fetch [provider]` | Fetch usage. Without a provider, fetches all enabled providers concurrently; with one, fetches it (refused if explicitly disabled) |
 | `enable <provider>` | Force a provider on, regardless of detection |
 | `disable <provider>` | Force a provider off; it is skipped by `fetch` and direct fetches are refused |
 | `auto <provider>` | Remove the explicit toggle and return to credential auto-detection |

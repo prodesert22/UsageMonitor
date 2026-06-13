@@ -1,5 +1,7 @@
 use std::collections::HashMap;
 
+use futures_util::future::join_all;
+
 use crate::config::{AppConfig, ProviderState};
 use crate::error::SpendPanelError;
 
@@ -84,40 +86,42 @@ impl ProviderRegistry {
         ids
     }
 
-    /// Fetches usage from all enabled providers.
+    /// Fetches usage from all enabled providers concurrently.
     pub async fn fetch_enabled(
         &self,
         config: &AppConfig,
         ctx_overrides: Option<&HashMap<String, ProviderContext>>,
     ) -> Vec<(String, Result<crate::model::UsageSnapshot, SpendPanelError>)> {
-        let mut results = Vec::new();
-        for id in self.enabled_ids(config) {
+        let fetches = self.enabled_ids(config).into_iter().map(|id| {
             let ctx = ctx_overrides
                 .and_then(|o| o.get(id.as_str()))
                 .cloned()
                 .unwrap_or_default();
-            let result = self.fetch(&id, &ctx).await;
-            results.push((id, result));
-        }
-        results
+            async move {
+                let result = self.fetch(&id, &ctx).await;
+                (id, result)
+            }
+        });
+        join_all(fetches).await
     }
 
-    /// Fetches usage from all registered providers.
+    /// Fetches usage from all registered providers concurrently.
     pub async fn fetch_all(
         &self,
         ctx_overrides: Option<&HashMap<String, ProviderContext>>,
     ) -> Vec<(String, Result<crate::model::UsageSnapshot, SpendPanelError>)> {
-        let mut results = Vec::new();
-        for provider in self.all() {
+        let fetches = self.all().into_iter().map(|provider| {
             let id = provider.metadata().id.to_string();
             let ctx = ctx_overrides
                 .and_then(|o| o.get(id.as_str()))
                 .cloned()
                 .unwrap_or_default();
-            let result = provider.fetch_usage(&ctx).await;
-            results.push((id, result));
-        }
-        results
+            async move {
+                let result = provider.fetch_usage(&ctx).await;
+                (id, result)
+            }
+        });
+        join_all(fetches).await
     }
 }
 
@@ -252,6 +256,11 @@ mod tests {
         meta: ProviderMetadata,
     }
 
+    struct DelayedProvider {
+        meta: ProviderMetadata,
+        delay: std::time::Duration,
+    }
+
     #[async_trait]
     impl UsageProvider for DetectableProvider {
         fn metadata(&self) -> &ProviderMetadata {
@@ -279,6 +288,38 @@ mod tests {
                 auth_methods: &["mock"],
                 website: None,
             },
+        }
+    }
+
+    fn delayed(id: &'static str, delay: std::time::Duration) -> DelayedProvider {
+        DelayedProvider {
+            meta: ProviderMetadata {
+                id,
+                name: id,
+                description: "delayed",
+                auth_methods: &["mock"],
+                website: None,
+            },
+            delay,
+        }
+    }
+
+    #[async_trait]
+    impl UsageProvider for DelayedProvider {
+        fn metadata(&self) -> &ProviderMetadata {
+            &self.meta
+        }
+
+        fn detect_credentials(&self) -> bool {
+            true
+        }
+
+        async fn fetch_usage(
+            &self,
+            _ctx: &ProviderContext,
+        ) -> Result<UsageSnapshot, SpendPanelError> {
+            tokio::time::sleep(self.delay).await;
+            Ok(UsageSnapshot::new(self.meta.id))
         }
     }
 
@@ -332,6 +373,26 @@ mod tests {
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].0, "on");
         assert!(results[0].1.is_ok());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_enabled_runs_providers_concurrently() {
+        let mut reg = ProviderRegistry::new();
+        let delay = std::time::Duration::from_millis(250);
+        reg.register(Box::new(delayed("slow-a", delay)));
+        reg.register(Box::new(delayed("slow-b", delay)));
+
+        let start = std::time::Instant::now();
+        let results = reg.fetch_enabled(&AppConfig::default(), None).await;
+        let elapsed = start.elapsed();
+
+        assert_eq!(results.len(), 2);
+        assert!(results.iter().all(|(_, result)| result.is_ok()));
+        assert!(
+            elapsed < std::time::Duration::from_millis(450),
+            "fetch_enabled should run providers concurrently; took {:?}",
+            elapsed
+        );
     }
 
     #[tokio::test]

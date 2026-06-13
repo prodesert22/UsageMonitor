@@ -1,5 +1,6 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use std::collections::HashMap;
 use usage_monitor_core::config::AppConfig;
 use usage_monitor_core::provider::ProviderContext;
 use usage_monitor_core::provider::registry::ProviderRegistry;
@@ -195,19 +196,29 @@ async fn main() -> Result<()> {
                     );
                     return Ok(());
                 }
+                let ctx_overrides: HashMap<String, ProviderContext> = ids
+                    .iter()
+                    .map(|id| {
+                        (
+                            id.clone(),
+                            provider_context(
+                                &config,
+                                id,
+                                api_key.as_deref(),
+                                credentials_path.as_deref(),
+                            ),
+                        )
+                    })
+                    .collect();
+                let results = registry.fetch_enabled(&config, Some(&ctx_overrides)).await;
+
                 let mut first = true;
-                for id in ids {
+                for (id, result) in results {
                     if !first {
                         println!();
                     }
                     first = false;
-                    let ctx = provider_context(
-                        &config,
-                        &id,
-                        api_key.as_deref(),
-                        credentials_path.as_deref(),
-                    );
-                    match registry.fetch(&id, &ctx).await {
+                    match result {
                         Ok(snapshot) => print_result(&snapshot, json)?,
                         Err(e) => println!("{}: error: {}", id, e),
                     }

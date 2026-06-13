@@ -1698,7 +1698,7 @@ dependencies = [
 
 [[package]]
 name = "usage-monitor-cli"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "chrono",
@@ -1712,10 +1712,11 @@ dependencies = [
 
 [[package]]
 name = "usage-monitor-core"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "async-trait",
  "chrono",
+ "futures-util",
  "pretty_assertions",
  "reqwest",
  "serde",
