@@ -98,14 +98,53 @@ Everything persists flat in `~/.config/usage-monitor/config.toml`:
 |-----|----------|---------|
 | `token` | yes | Full browser `Cookie` header of a logged-in opencode.ai session, `auth=<Fe26...>`, or the bare `Fe26...` auth cookie value. Bare values are automatically sent as `auth=<value>`. |
 | `workspaces` | no | TOML array of `wrk_...` ids, optionally with a display name (`"wrk_id=Name"`); empty/absent → auto-discovery |
-| `enabled` | yes | Must be `true`; the provider is never auto-enabled |
+| `enabled` | no | Per-account toggle; an account is enabled by default. The provider auto-enables once any account is configured |
+
+`token` and `workspaces` are per-account keys. The bare `opencode-go set token`
+/ `opencode-go workspace add` commands write to the implicit `default` account;
+use `opencode-go account set <name> token ...` and
+`opencode-go workspace add ... --account <name>` for additional logins, and
+`opencode-go account remove <name>` to drop one.
 
 ```toml
-[providers.opencode-go]
-enabled = true
+[providers.opencode-go.accounts.default]
 token = "<Cookie header, auth=Fe26 value, or bare Fe26 value>"
 workspaces = ["wrk_aaaa", "wrk_bbbb=Production"]
 ```
+
+## Multiple accounts
+
+> **Easy — no token juggling.** Unlike the OAuth providers
+> ([`claude`](claude.md), [`codex`](codex.md)), the session cookie doesn't
+> rotate when used. Adding another account is just another `account set token`;
+> nothing to copy, nothing to keep alive (the cookie still expires on its own,
+> so refresh it from the browser when it does).
+
+Each account holds its **own** cookie (`token`) and its **own** workspace list.
+Register one per opencode.ai login:
+
+```bash
+usage-monitor-cli opencode-go account add personal --label "Personal"
+usage-monitor-cli opencode-go account set personal token 'Fe26.2**...'
+usage-monitor-cli opencode-go account add team --label "Team"
+usage-monitor-cli opencode-go account set team token 'Fe26.2**...'
+```
+
+**Workspaces are per account — pick the account when adding one.** The
+`workspace` commands take `--account <name>` (default: `default`). A workspace
+added without `--account` lands on the `default` account, *not* on your named
+ones:
+
+```bash
+# add a workspace to the "team" account specifically
+usage-monitor-cli opencode-go workspace add wrk_xxxx --account team
+usage-monitor-cli opencode-go workspace list --account team
+usage-monitor-cli opencode-go workspace remove wrk_xxxx --account team
+```
+
+Leave an account's workspace list empty to auto-discover every workspace its
+cookie can see. See the [main README](../../README.md#multiple-accounts) for the
+full account command reference.
 
 ## How extraction works
 

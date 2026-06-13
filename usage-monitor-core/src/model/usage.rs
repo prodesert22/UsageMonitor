@@ -89,6 +89,13 @@ pub struct NamedRateWindow {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct UsageSnapshot {
     pub provider_id: String,
+    /// Account this snapshot was fetched for. `None` for the implicit single
+    /// account (provider with no configured accounts).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_id: Option<String>,
+    /// Human-friendly account label, when one is configured.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_label: Option<String>,
     pub collected_at: DateTime<Utc>,
     pub primary_rate_window: Option<RateWindow>,
     pub secondary_rate_window: Option<RateWindow>,
@@ -103,6 +110,8 @@ impl UsageSnapshot {
     pub fn new(provider_id: impl Into<String>) -> Self {
         Self {
             provider_id: provider_id.into(),
+            account_id: None,
+            account_label: None,
             collected_at: Utc::now(),
             primary_rate_window: None,
             secondary_rate_window: None,
@@ -203,6 +212,8 @@ mod tests {
     fn test_usage_snapshot_serialization_roundtrip() {
         let s = UsageSnapshot {
             provider_id: "test".into(),
+            account_id: None,
+            account_label: None,
             collected_at: Utc::now(),
             primary_rate_window: Some(RateWindow::new(50, 100, "test", 60)),
             secondary_rate_window: None,

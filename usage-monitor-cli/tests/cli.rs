@@ -161,8 +161,13 @@ fn test_provider_config_set_show_unset() {
     // Secret values are masked in output.
     assert!(!stdout(&out).contains("secret-cookie-value"));
 
-    // Stored flat in [providers.opencode-go], no .config subtable.
+    // Stored under the implicit default account, no .config subtable.
     let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(
+        raw.contains("[providers.opencode-go.accounts.default]"),
+        "got: {}",
+        raw
+    );
     assert!(
         raw.contains(r#"token = "session=secret-cookie-value""#),
         "got: {}",
@@ -248,6 +253,171 @@ fn test_workspace_add_remove_list() {
     ]);
     assert!(!out.status.success());
     assert!(stderr(&out).contains("cannot contain comma"));
+}
+
+#[test]
+fn test_account_add_list_remove() {
+    let env = TestEnv::new("account-crud");
+
+    let out = env.run(&["claude", "account", "add", "work", "--label", "Work Claude"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("claude.work added"));
+
+    // Stored as a nested account table with the label.
+    let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(
+        raw.contains("[providers.claude.accounts.work]"),
+        "got: {}",
+        raw
+    );
+    assert!(raw.contains(r#"label = "Work Claude""#), "got: {}", raw);
+
+    // Adding again is reported as already existing.
+    let out = env.run(&["claude", "account", "add", "work"]);
+    assert!(stdout(&out).contains("already exists"));
+
+    let out = env.run(&["claude", "account", "list"]);
+    assert!(stdout(&out).contains("[work] Work Claude"), "got: {}", stdout(&out));
+
+    let out = env.run(&["claude", "account", "remove", "work"]);
+    assert!(out.status.success());
+    let out = env.run(&["claude", "account", "list"]);
+    assert!(stdout(&out).contains("no accounts configured"));
+
+    // Removing a missing account fails.
+    let out = env.run(&["claude", "account", "remove", "ghost"]);
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("no account 'ghost'"));
+}
+
+#[test]
+fn test_account_set_and_show_multiple() {
+    let env = TestEnv::new("account-multi");
+
+    env.run(&[
+        "claude",
+        "account",
+        "set",
+        "personal",
+        "credentials_path",
+        "/tmp/personal.json",
+    ]);
+    env.run(&[
+        "claude",
+        "account",
+        "set",
+        "work",
+        "credentials_path",
+        "/tmp/work.json",
+    ]);
+    env.run(&["claude", "account", "disable", "work"]);
+
+    let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(raw.contains("[providers.claude.accounts.personal]"), "got: {}", raw);
+    assert!(raw.contains("[providers.claude.accounts.work]"), "got: {}", raw);
+
+    let out = env.run(&["claude", "show"]);
+    let text = stdout(&out);
+    // A provider with configured accounts auto-enables.
+    assert!(text.contains("state = enabled (auto)"), "got: {}", text);
+    assert!(text.contains("[personal]"), "got: {}", text);
+    assert!(text.contains("[work]"), "got: {}", text);
+    assert!(text.contains("disabled"), "got: {}", text);
+    assert!(text.contains("/tmp/work.json"), "got: {}", text);
+}
+
+#[test]
+fn test_fetch_unknown_account_fails() {
+    let env = TestEnv::new("fetch-acct");
+    env.run(&["claude", "account", "set", "work", "credentials_path", "/tmp/w.json"]);
+    let out = env.run(&["fetch", "claude", "--account", "ghost"]);
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("no account 'ghost'"), "stderr: {}", stderr(&out));
+}
+
+#[test]
+fn test_auto_default_coexists_with_named_account() {
+    let env = TestEnv::new("coexist");
+    env.write_claude_credentials();
+    env.run(&["claude", "account", "add", "work", "--label", "Work"]);
+    env.run(&["claude", "account", "set", "work", "credentials_path", "/tmp/w.json"]);
+
+    // show lists both the auto-detected default and the named account.
+    let text = stdout(&env.run(&["claude", "show"]));
+    assert!(text.contains("[default] (auto-detected)"), "got: {}", text);
+    assert!(text.contains("[work] Work"), "got: {}", text);
+
+    // Disabling default drops the auto entry; named account stays.
+    env.run(&["claude", "account", "disable", "default"]);
+    let text = stdout(&env.run(&["claude", "show"]));
+    assert!(!text.contains("(auto-detected)"), "got: {}", text);
+    assert!(text.contains("[default]"), "got: {}", text);
+    assert!(text.contains("disabled"), "got: {}", text);
+    assert!(text.contains("[work] Work"), "got: {}", text);
+}
+
+#[test]
+fn test_fetch_emits_one_block_per_account() {
+    let env = TestEnv::new("fetch-per-account");
+    // Two accounts pointed at non-existent credential files: both fail, but
+    // each must be attempted and reported under its own label.
+    env.run(&["claude", "account", "add", "personal", "--label", "Personal"]);
+    env.run(&[
+        "claude",
+        "account",
+        "set",
+        "personal",
+        "credentials_path",
+        "/nonexistent/personal.json",
+    ]);
+    env.run(&["claude", "account", "add", "work", "--label", "Work"]);
+    env.run(&[
+        "claude",
+        "account",
+        "set",
+        "work",
+        "credentials_path",
+        "/nonexistent/work.json",
+    ]);
+
+    let out = env.run(&["fetch", "claude"]);
+    let text = stdout(&out);
+    assert!(text.contains("claude — Personal"), "got: {}", text);
+    assert!(text.contains("claude — Work"), "got: {}", text);
+
+    // Restricting to one account drops the other.
+    let out = env.run(&["fetch", "claude", "--account", "work"]);
+    let text = stdout(&out);
+    assert!(text.contains("claude — Work"), "got: {}", text);
+    assert!(!text.contains("Personal"), "got: {}", text);
+}
+
+#[test]
+fn test_workspace_scoped_to_account() {
+    let env = TestEnv::new("workspace-account");
+    let out = env.run(&[
+        "opencode-go",
+        "workspace",
+        "add",
+        "wrk_prod",
+        "--account",
+        "team",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(
+        raw.contains("[providers.opencode-go.accounts.team]"),
+        "got: {}",
+        raw
+    );
+
+    let out = env.run(&["opencode-go", "workspace", "list", "--account", "team"]);
+    assert_eq!(stdout(&out).trim(), "wrk_prod");
+
+    // Default account is independent.
+    let out = env.run(&["opencode-go", "workspace", "list"]);
+    assert!(stdout(&out).contains("auto-discovery"));
 }
 
 #[test]

@@ -1,9 +1,8 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::collections::HashMap;
-use usage_monitor_core::config::AppConfig;
+use usage_monitor_core::config::{AppConfig, DEFAULT_ACCOUNT};
 use usage_monitor_core::provider::ProviderContext;
-use usage_monitor_core::provider::registry::ProviderRegistry;
+use usage_monitor_core::provider::registry::{AccountTarget, ProviderRegistry};
 use usage_monitor_core::{ProviderState, RateWindow, UsageSnapshot};
 
 #[derive(Parser)]
@@ -41,20 +40,23 @@ enum Command {
     OpencodeGo(OpencodeGoCmd),
     /// Claude provider commands
     #[command(name = "claude", subcommand)]
-    Claude(ProviderConfigCmd),
+    Claude(ProviderCmd),
     /// Codex provider commands
     #[command(name = "codex", subcommand)]
-    Codex(ProviderConfigCmd),
+    Codex(ProviderCmd),
     /// Anthropic provider commands
     #[command(name = "anthropic", subcommand)]
-    Anthropic(ProviderConfigCmd),
+    Anthropic(ProviderCmd),
     /// OpenAI provider commands
     #[command(name = "openai", subcommand)]
-    OpenAI(ProviderConfigCmd),
+    OpenAI(ProviderCmd),
     /// Fetch usage for a provider, or for all enabled providers when omitted
     Fetch {
         /// Provider ID (e.g. claude, codex, anthropic, openai)
         provider: Option<String>,
+        /// Restrict to a single account (by name)
+        #[arg(long)]
+        account: Option<String>,
         /// Print the full snapshot as JSON
         #[arg(long)]
         json: bool,
@@ -67,24 +69,61 @@ enum Command {
     },
 }
 
+/// Provider config commands. The bare `set`/`unset` operate on the `default`
+/// account; `account` manages named accounts for multi-login providers.
 #[derive(Subcommand)]
-enum ProviderConfigCmd {
-    /// Show a provider's config (secret values are masked)
+enum ProviderCmd {
+    /// Show the provider's state and configured accounts (secrets masked)
     Show,
-    /// Set a config value
+    /// Set a config value on the default account
     Set { key: String, value: String },
-    /// Remove a config key
+    /// Remove a config key from the default account
     Unset { key: String },
+    /// Manage named accounts
+    #[command(subcommand)]
+    Account(AccountCmd),
+}
+
+#[derive(Subcommand)]
+enum AccountCmd {
+    /// List configured accounts
+    List,
+    /// Add an account
+    Add {
+        name: String,
+        /// Display label
+        #[arg(long)]
+        label: Option<String>,
+    },
+    /// Remove an account
+    Remove { name: String },
+    /// Set a config value on an account
+    Set {
+        name: String,
+        key: String,
+        value: String,
+    },
+    /// Remove a config key from an account
+    Unset { name: String, key: String },
+    /// Enable an account
+    Enable { name: String },
+    /// Disable an account
+    Disable { name: String },
+    /// Return an account to auto (remove the explicit toggle)
+    Auto { name: String },
 }
 
 #[derive(Subcommand)]
 enum OpencodeGoCmd {
-    /// Show config (token, cookie, workspaces, enabled state)
+    /// Show the provider's state and configured accounts (secrets masked)
     Show,
-    /// Set a config key (token, cookie, etc.)
+    /// Set a config value on the default account (token, cookie, etc.)
     Set { key: String, value: String },
-    /// Remove a config key
+    /// Remove a config key from the default account
     Unset { key: String },
+    /// Manage named accounts
+    #[command(subcommand)]
+    Account(AccountCmd),
     /// Manage tracked workspaces (accepts wrk_... ids or dashboard URLs)
     #[command(subcommand)]
     Workspace(WorkspaceCmd),
@@ -99,11 +138,23 @@ enum WorkspaceCmd {
         workspace: String,
         /// Display name (e.g. `opencode-go workspace add wrk_xxx "Production"`)
         name: Option<String>,
+        /// Account to attach the workspace to
+        #[arg(long, default_value = DEFAULT_ACCOUNT)]
+        account: String,
     },
     /// Remove a workspace
-    Remove { workspace: String },
+    Remove {
+        workspace: String,
+        /// Account the workspace belongs to
+        #[arg(long, default_value = DEFAULT_ACCOUNT)]
+        account: String,
+    },
     /// List configured workspaces
-    List,
+    List {
+        /// Account to list workspaces for
+        #[arg(long, default_value = DEFAULT_ACCOUNT)]
+        account: String,
+    },
 }
 
 const WORKSPACE_PROVIDER: &str = "opencode-go";
@@ -122,15 +173,12 @@ async fn main() -> Result<()> {
                 let state = registry
                     .provider_state(meta.id, &config)
                     .expect("registered provider");
-                let label = match state {
-                    ProviderState::Enabled => "enabled",
-                    ProviderState::Disabled => "disabled",
-                    ProviderState::AutoEnabled => "enabled (auto)",
-                    ProviderState::AutoDisabled => "disabled (auto)",
-                };
                 println!(
                     "{:<12} {:<16} {} — {}",
-                    meta.id, label, meta.name, meta.description
+                    meta.id,
+                    state_label(state),
+                    meta.name,
+                    meta.description
                 );
             }
         }
@@ -138,92 +186,100 @@ async fn main() -> Result<()> {
         Command::Disable { provider } => set_enabled(&registry, config, &provider, Some(false))?,
         Command::Auto { provider } => set_enabled(&registry, config, &provider, None)?,
         Command::OpencodeGo(cmd) => match cmd {
-            OpencodeGoCmd::Show => {
-                handle_provider_config(&registry, config, "opencode-go", ProviderConfigCmd::Show)?
+            OpencodeGoCmd::Show => handle_provider_cmd(&registry, config, "opencode-go", ProviderCmd::Show)?,
+            OpencodeGoCmd::Set { key, value } => {
+                handle_provider_cmd(&registry, config, "opencode-go", ProviderCmd::Set { key, value })?
             }
-            OpencodeGoCmd::Set { key, value } => handle_provider_config(
-                &registry,
-                config,
-                "opencode-go",
-                ProviderConfigCmd::Set { key, value },
-            )?,
-            OpencodeGoCmd::Unset { key } => handle_provider_config(
-                &registry,
-                config,
-                "opencode-go",
-                ProviderConfigCmd::Unset { key },
-            )?,
+            OpencodeGoCmd::Unset { key } => {
+                handle_provider_cmd(&registry, config, "opencode-go", ProviderCmd::Unset { key })?
+            }
+            OpencodeGoCmd::Account(acmd) => {
+                handle_provider_cmd(&registry, config, "opencode-go", ProviderCmd::Account(acmd))?
+            }
             OpencodeGoCmd::Workspace(cmd) => handle_workspace(config, cmd)?,
         },
-        Command::Claude(cmd) => handle_provider_config(&registry, config, "claude", cmd)?,
-        Command::Codex(cmd) => handle_provider_config(&registry, config, "codex", cmd)?,
-        Command::Anthropic(cmd) => handle_provider_config(&registry, config, "anthropic", cmd)?,
-        Command::OpenAI(cmd) => handle_provider_config(&registry, config, "openai", cmd)?,
+        Command::Claude(cmd) => handle_provider_cmd(&registry, config, "claude", cmd)?,
+        Command::Codex(cmd) => handle_provider_cmd(&registry, config, "codex", cmd)?,
+        Command::Anthropic(cmd) => handle_provider_cmd(&registry, config, "anthropic", cmd)?,
+        Command::OpenAI(cmd) => handle_provider_cmd(&registry, config, "openai", cmd)?,
         Command::Fetch {
             provider,
+            account,
             json,
             api_key,
             credentials_path,
-        } => match provider {
-            Some(id) => {
-                if registry.provider_state(&id, &config) == Some(ProviderState::Disabled) {
-                    anyhow::bail!(
-                        "provider '{}' is disabled; enable it with `usage-monitor-cli enable {}`",
-                        id,
-                        id
-                    );
-                }
-                let ctx = provider_context(
-                    &config,
-                    &id,
-                    api_key.as_deref(),
-                    credentials_path.as_deref(),
-                );
-                let snapshot = registry
-                    .fetch(&id, &ctx)
-                    .await
-                    .map_err(|e| anyhow::anyhow!("{}", e))?;
-                print_result(&snapshot, json)?;
-            }
-            None => {
-                let ids = registry.enabled_ids(&config);
-                if ids.is_empty() {
-                    println!(
-                        "No enabled providers. Use `enable <provider>` or set up credentials."
-                    );
-                    return Ok(());
-                }
-                let ctx_overrides: HashMap<String, ProviderContext> = ids
-                    .iter()
-                    .map(|id| {
-                        (
-                            id.clone(),
-                            provider_context(
-                                &config,
-                                id,
-                                api_key.as_deref(),
-                                credentials_path.as_deref(),
-                            ),
-                        )
-                    })
-                    .collect();
-                let results = registry.fetch_enabled(&config, Some(&ctx_overrides)).await;
-
-                let mut first = true;
-                for (id, result) in results {
-                    if !first {
-                        println!();
-                    }
-                    first = false;
-                    match result {
-                        Ok(snapshot) => print_result(&snapshot, json)?,
-                        Err(e) => println!("{}: error: {}", id, e),
-                    }
-                }
-            }
-        },
+        } => {
+            run_fetch(
+                &registry,
+                &config,
+                provider.as_deref(),
+                account.as_deref(),
+                json,
+                api_key.as_deref(),
+                credentials_path.as_deref(),
+            )
+            .await?
+        }
     }
 
+    Ok(())
+}
+
+async fn run_fetch(
+    registry: &ProviderRegistry,
+    config: &AppConfig,
+    provider: Option<&str>,
+    account: Option<&str>,
+    json: bool,
+    api_key: Option<&str>,
+    credentials_path: Option<&str>,
+) -> Result<()> {
+    let mut targets = match provider {
+        Some(id) => {
+            if registry.get(id).is_none() {
+                anyhow::bail!("unknown provider '{}'", id);
+            }
+            if registry.provider_state(id, config) == Some(ProviderState::Disabled) {
+                anyhow::bail!(
+                    "provider '{}' is disabled; enable it with `usage-monitor-cli enable {}`",
+                    id,
+                    id
+                );
+            }
+            registry.provider_targets(id, config)
+        }
+        None => registry.enabled_targets(config),
+    };
+
+    if let Some(acct) = account {
+        targets.retain(|t| t.account_id == acct);
+        if targets.is_empty() {
+            anyhow::bail!("no account '{}' configured for the given provider", acct);
+        }
+    }
+
+    if targets.is_empty() {
+        println!("No enabled providers. Use `enable <provider>` or set up credentials.");
+        return Ok(());
+    }
+
+    let results = registry
+        .fetch_targets(targets, |target| {
+            provider_context(config, target, api_key, credentials_path)
+        })
+        .await;
+
+    let mut first = true;
+    for (target, result) in results {
+        if !first {
+            println!();
+        }
+        first = false;
+        match result {
+            Ok(snapshot) => print_result(&snapshot, json)?,
+            Err(e) => println!("{}: error: {}", target_title(&target), e),
+        }
+    }
     Ok(())
 }
 
@@ -236,6 +292,15 @@ fn save_config(config: &AppConfig) -> Result<std::path::PathBuf> {
     Ok(path)
 }
 
+fn state_label(state: ProviderState) -> &'static str {
+    match state {
+        ProviderState::Enabled => "enabled",
+        ProviderState::Disabled => "disabled",
+        ProviderState::AutoEnabled => "enabled (auto)",
+        ProviderState::AutoDisabled => "disabled (auto)",
+    }
+}
+
 /// Masks secret-looking config values for display.
 fn mask_value(key: &str, value: &str) -> String {
     let secret = ["cookie", "api_key", "token", "access_token"].contains(&key);
@@ -246,94 +311,203 @@ fn mask_value(key: &str, value: &str) -> String {
     }
 }
 
-fn handle_provider_config(
+fn handle_provider_cmd(
     registry: &ProviderRegistry,
     mut config: AppConfig,
     provider_id: &str,
-    cmd: ProviderConfigCmd,
+    cmd: ProviderCmd,
 ) -> Result<()> {
     if registry.get(provider_id).is_none() {
         anyhow::bail!("unknown provider '{}'", provider_id);
     }
     match cmd {
-        ProviderConfigCmd::Show => {
-            let enabled = registry
-                .provider_state(provider_id, &config)
-                .expect("registered provider");
-            let label = match enabled {
-                ProviderState::Enabled => "enabled",
-                ProviderState::Disabled => "disabled",
-                ProviderState::AutoEnabled => "enabled (auto)",
-                ProviderState::AutoDisabled => "disabled (auto)",
-            };
-            println!("provider = {}", provider_id);
-            println!("state = {}", label);
-            if let Some(token) = config.provider_token(provider_id) {
-                println!("token = {}", mask_value("token", token));
-            }
-            if let Some(map) = config.provider_config(provider_id) {
-                let mut keys: Vec<&String> = map.keys().collect();
-                keys.sort();
-                for key in keys {
-                    println!("{} = {}", key, mask_value(key, &map[key]));
-                }
-            }
-            if provider_id == WORKSPACE_PROVIDER {
-                let current = config.provider_workspaces(WORKSPACE_PROVIDER).to_vec();
-                if current.is_empty() {
-                    println!("(no workspaces configured — auto-discovery will be used)");
-                } else {
-                    for entry in &current {
-                        match usage_monitor_core::provider::opencode_go::parse_workspace_entry(
-                            entry,
-                        ) {
-                            Some(ws) => match &ws.name {
-                                Some(name) => println!("{:<30} {}", ws.id, name),
-                                None => println!("{}", ws.id),
-                            },
-                            None => println!("{}", entry),
-                        }
-                    }
-                }
-            }
-        }
-        ProviderConfigCmd::Set { key, value } => {
-            config.set_provider_config(provider_id, &key, &value);
+        ProviderCmd::Show => show_provider(registry, &config, provider_id),
+        ProviderCmd::Set { key, value } => {
+            config.set_account_config(provider_id, DEFAULT_ACCOUNT, &key, &value);
             let path = save_config(&config)?;
             println!(
-                "{}.{} = {} ({})",
+                "{}.{}.{} = {} ({})",
                 provider_id,
+                DEFAULT_ACCOUNT,
                 key,
                 mask_value(&key, &value),
                 path.display()
             );
+            Ok(())
         }
-        ProviderConfigCmd::Unset { key } => {
-            config.unset_provider_config(provider_id, &key);
+        ProviderCmd::Unset { key } => {
+            config.unset_account_config(provider_id, DEFAULT_ACCOUNT, &key);
             let path = save_config(&config)?;
-            println!("{}.{} removed ({})", provider_id, key, path.display());
+            println!(
+                "{}.{}.{} removed ({})",
+                provider_id,
+                DEFAULT_ACCOUNT,
+                key,
+                path.display()
+            );
+            Ok(())
+        }
+        ProviderCmd::Account(acmd) => handle_account_cmd(config, provider_id, acmd),
+    }
+}
+
+fn handle_account_cmd(mut config: AppConfig, provider_id: &str, cmd: AccountCmd) -> Result<()> {
+    match cmd {
+        AccountCmd::List => {
+            let ids = config.account_ids(provider_id);
+            if ids.is_empty() {
+                println!("(no accounts configured — auto-detection will be used)");
+            } else {
+                for id in ids {
+                    print_account(&config, provider_id, &id);
+                }
+            }
+            Ok(())
+        }
+        AccountCmd::Add { name, label } => {
+            let created = config.add_account(provider_id, &name, label.as_deref());
+            let path = save_config(&config)?;
+            if created {
+                println!("{}.{} added ({})", provider_id, name, path.display());
+            } else {
+                println!("{}.{} already exists ({})", provider_id, name, path.display());
+            }
+            Ok(())
+        }
+        AccountCmd::Remove { name } => {
+            if !config.remove_account(provider_id, &name) {
+                anyhow::bail!("no account '{}' for provider '{}'", name, provider_id);
+            }
+            let path = save_config(&config)?;
+            println!("{}.{} removed ({})", provider_id, name, path.display());
+            Ok(())
+        }
+        AccountCmd::Set { name, key, value } => {
+            config.set_account_config(provider_id, &name, &key, &value);
+            let path = save_config(&config)?;
+            println!(
+                "{}.{}.{} = {} ({})",
+                provider_id,
+                name,
+                key,
+                mask_value(&key, &value),
+                path.display()
+            );
+            Ok(())
+        }
+        AccountCmd::Unset { name, key } => {
+            config.unset_account_config(provider_id, &name, &key);
+            let path = save_config(&config)?;
+            println!("{}.{}.{} removed ({})", provider_id, name, key, path.display());
+            Ok(())
+        }
+        AccountCmd::Enable { name } => set_account_toggle(config, provider_id, &name, Some(true)),
+        AccountCmd::Disable { name } => set_account_toggle(config, provider_id, &name, Some(false)),
+        AccountCmd::Auto { name } => set_account_toggle(config, provider_id, &name, None),
+    }
+}
+
+fn set_account_toggle(
+    mut config: AppConfig,
+    provider_id: &str,
+    name: &str,
+    enabled: Option<bool>,
+) -> Result<()> {
+    match enabled {
+        Some(value) => config.set_account_enabled(provider_id, name, value),
+        None => config.clear_account_enabled(provider_id, name),
+    }
+    let path = save_config(&config)?;
+    let label = match enabled {
+        Some(true) => "enabled",
+        Some(false) => "disabled",
+        None => "auto",
+    };
+    println!("{}.{}: {} ({})", provider_id, name, label, path.display());
+    Ok(())
+}
+
+fn show_provider(registry: &ProviderRegistry, config: &AppConfig, provider_id: &str) -> Result<()> {
+    let state = registry
+        .provider_state(provider_id, config)
+        .expect("registered provider");
+    println!("provider = {}", provider_id);
+    println!("state = {}", state_label(state));
+
+    // The implicit auto-detected default is fetched alongside named accounts
+    // unless an explicit `default` account overrides it.
+    let detected = registry
+        .get(provider_id)
+        .is_some_and(|p| p.detect_credentials());
+    if detected && config.account(provider_id, DEFAULT_ACCOUNT).is_none() {
+        println!("[default] (auto-detected)");
+    }
+
+    let ids = config.account_ids(provider_id);
+    if ids.is_empty() {
+        if !detected {
+            println!("(no accounts configured — auto-detection will be used)");
+        }
+    } else {
+        for id in ids {
+            print_account(config, provider_id, &id);
         }
     }
     Ok(())
 }
 
+fn print_account(config: &AppConfig, provider_id: &str, account: &str) {
+    match config.account_label(provider_id, account) {
+        Some(label) => println!("[{}] {}", account, label),
+        None => println!("[{}]", account),
+    }
+    if let Some(false) = config.account_enabled(provider_id, account) {
+        println!("  disabled");
+    }
+    if let Some(token) = config.account_token(provider_id, account) {
+        println!("  token = {}", mask_value("token", token));
+    }
+    if let Some(map) = config.account_config(provider_id, account) {
+        let mut keys: Vec<&String> = map.keys().collect();
+        keys.sort();
+        for key in keys {
+            println!("  {} = {}", key, mask_value(key, &map[key]));
+        }
+    }
+    if provider_id == WORKSPACE_PROVIDER {
+        for entry in config.account_workspaces(provider_id, account) {
+            match usage_monitor_core::provider::opencode_go::parse_workspace_entry(entry) {
+                Some(ws) => match &ws.name {
+                    Some(name) => println!("  {:<28} {}", ws.id, name),
+                    None => println!("  {}", ws.id),
+                },
+                None => println!("  {}", entry),
+            }
+        }
+    }
+}
+
 fn handle_workspace(mut config: AppConfig, cmd: WorkspaceCmd) -> Result<()> {
     use usage_monitor_core::provider::opencode_go;
 
-    let current = config.provider_workspaces(WORKSPACE_PROVIDER).to_vec();
-
     match cmd {
-        WorkspaceCmd::Add { workspace, name } => {
+        WorkspaceCmd::Add {
+            workspace,
+            name,
+            account,
+        } => {
+            let current = config.account_workspaces(WORKSPACE_PROVIDER, &account).to_vec();
             let ids = opencode_go::add_workspace(&current, &workspace, name.as_deref())
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
-            config.set_provider_workspaces(WORKSPACE_PROVIDER, ids.clone());
+            config.set_account_workspaces(WORKSPACE_PROVIDER, &account, ids.clone());
             let path = save_config(&config)?;
             println!("workspaces = [{}] ({})", ids.join(", "), path.display());
         }
-        WorkspaceCmd::Remove { workspace } => {
+        WorkspaceCmd::Remove { workspace, account } => {
+            let current = config.account_workspaces(WORKSPACE_PROVIDER, &account).to_vec();
             let ids = opencode_go::remove_workspace(&current, &workspace)
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
-            config.set_provider_workspaces(WORKSPACE_PROVIDER, ids.clone());
+            config.set_account_workspaces(WORKSPACE_PROVIDER, &account, ids.clone());
             let path = save_config(&config)?;
             if ids.is_empty() {
                 println!("workspaces = [] — auto-discovery ({})", path.display());
@@ -341,7 +515,8 @@ fn handle_workspace(mut config: AppConfig, cmd: WorkspaceCmd) -> Result<()> {
                 println!("workspaces = [{}] ({})", ids.join(", "), path.display());
             }
         }
-        WorkspaceCmd::List => {
+        WorkspaceCmd::List { account } => {
+            let current = config.account_workspaces(WORKSPACE_PROVIDER, &account).to_vec();
             if current.is_empty() {
                 println!("(no workspaces configured — auto-discovery will be used)");
             } else {
@@ -360,26 +535,26 @@ fn handle_workspace(mut config: AppConfig, cmd: WorkspaceCmd) -> Result<()> {
     Ok(())
 }
 
-/// Builds the fetch context for a provider: values from the config file's
-/// `[providers.<id>.config]` section, overridden by CLI flags.
+/// Builds the fetch context for an account target: values from the account's
+/// config, overridden by CLI flags.
 fn provider_context(
     config: &AppConfig,
-    provider: &str,
+    target: &AccountTarget,
     api_key: Option<&str>,
     credentials_path: Option<&str>,
 ) -> ProviderContext {
     let mut ctx = ProviderContext::new();
-    if let Some(settings) = config.providers.get(provider) {
-        for (k, v) in &settings.config {
+    if let Some(account) = config.account(&target.provider_id, &target.account_id) {
+        for (k, v) in &account.config {
             ctx.config.insert(k.clone(), v.clone());
         }
-        if let Some(token) = &settings.token {
+        if let Some(token) = &account.token {
             ctx.config.insert("token".into(), token.clone());
         }
         // Workspace array bridges into the provider as a comma-separated value.
-        if !settings.workspaces.is_empty() {
+        if !account.workspaces.is_empty() {
             ctx.config
-                .insert("workspaces".into(), settings.workspaces.join(","));
+                .insert("workspaces".into(), account.workspaces.join(","));
         }
     }
     if let Some(key) = api_key {
@@ -405,11 +580,7 @@ fn set_enabled(
         Some(value) => config.set_provider_enabled(provider, value),
         None => config.clear_provider_enabled(provider),
     }
-    let path = AppConfig::default_path()
-        .ok_or_else(|| anyhow::anyhow!("cannot resolve config path (HOME not set)"))?;
-    config
-        .save_to_path(&path)
-        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    let path = save_config(&config)?;
 
     let state = registry
         .provider_state(provider, &config)
@@ -433,9 +604,28 @@ fn print_result(snapshot: &UsageSnapshot, json: bool) -> Result<()> {
     Ok(())
 }
 
+/// Display title for a snapshot's header (provider plus account, when set).
+fn snapshot_title(snap: &UsageSnapshot) -> String {
+    match (snap.account_label.as_deref(), snap.account_id.as_deref()) {
+        (Some(label), _) => format!("{} — {}", snap.provider_id, label),
+        (None, Some(id)) => format!("{} ({})", snap.provider_id, id),
+        (None, None) => snap.provider_id.clone(),
+    }
+}
+
+/// Display title for a fetch error line.
+fn target_title(target: &AccountTarget) -> String {
+    match &target.label {
+        Some(label) => format!("{} — {}", target.provider_id, label),
+        None if target.explicit => format!("{} ({})", target.provider_id, target.account_id),
+        None => target.provider_id.clone(),
+    }
+}
+
 fn print_snapshot(snap: &UsageSnapshot) {
-    let width = snapshot_text_width(snap);
-    print_block_header(&snap.provider_id, width);
+    let title = snapshot_title(snap);
+    let width = snapshot_text_width(snap, &title);
+    print_block_header(&title, width);
     println!(
         "Collected at: {}",
         snap.collected_at.format("%Y-%m-%d %H:%M:%S UTC")
@@ -538,8 +728,8 @@ fn block_header_lines(title: &str, width: usize) -> (String, String, String) {
     ("_".repeat(width), title.to_string(), "─".repeat(width))
 }
 
-fn snapshot_text_width(snap: &UsageSnapshot) -> usize {
-    let mut width = snap.provider_id.chars().count();
+fn snapshot_text_width(snap: &UsageSnapshot, title: &str) -> usize {
+    let mut width = title.chars().count();
     width = width.max(
         format!(
             "Collected at: {}",
@@ -705,5 +895,15 @@ mod tests {
         let (top, _, bottom) = block_header_lines("longer-than-width", 5);
         assert_eq!(top.chars().count(), "longer-than-width".chars().count());
         assert_eq!(bottom.chars().count(), "longer-than-width".chars().count());
+    }
+
+    #[test]
+    fn test_snapshot_title() {
+        let mut snap = UsageSnapshot::new("claude");
+        assert_eq!(snapshot_title(&snap), "claude");
+        snap.account_id = Some("work".into());
+        assert_eq!(snapshot_title(&snap), "claude (work)");
+        snap.account_label = Some("Work Claude".into());
+        assert_eq!(snapshot_title(&snap), "claude — Work Claude");
     }
 }
