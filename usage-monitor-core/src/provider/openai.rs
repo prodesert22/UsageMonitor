@@ -268,6 +268,10 @@ impl UsageProvider for OpenAIProvider {
         &self.metadata
     }
 
+    fn detect_credentials(&self) -> bool {
+        std::env::var("OPENAI_API_KEY").is_ok_and(|k| !k.is_empty())
+    }
+
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
         let api_key = Self::resolve_api_key(ctx)?;
         let base = self.api_base();

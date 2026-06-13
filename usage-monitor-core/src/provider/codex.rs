@@ -440,6 +440,10 @@ impl UsageProvider for CodexProvider {
         &self.metadata
     }
 
+    fn detect_credentials(&self) -> bool {
+        CodexOAuthCredentials::default_path().is_some_and(|p| p.exists())
+    }
+
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
         let client = Self::build_client(ctx)?;
 

@@ -58,6 +58,12 @@ pub trait UsageProvider: Send + Sync {
 
     /// Fetches usage data.
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError>;
+
+    /// Whether credentials for this provider are detectable on this machine
+    /// (used to auto-enable providers without an explicit toggle).
+    fn detect_credentials(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]

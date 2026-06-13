@@ -1,5 +1,12 @@
 use thiserror::Error;
 
+fn rate_limited_message(provider: &str, retry_after: &Option<u64>) -> String {
+    match retry_after {
+        Some(secs) if *secs > 0 => format!("Rate limited by '{}', retry after {}s", provider, secs),
+        _ => format!("Rate limited by '{}', try again in a few minutes", provider),
+    }
+}
+
 #[derive(Error, Debug, Clone, PartialEq)]
 pub enum SpendPanelError {
     #[error("Provider '{0}' not found")]
@@ -11,7 +18,7 @@ pub enum SpendPanelError {
     #[error("HTTP request failed: {0}")]
     NetworkError(String),
 
-    #[error("Rate limited by '{0}', retry after {1:?}s")]
+    #[error("{}", rate_limited_message(.0, .1))]
     RateLimited(String, Option<u64>),
 
     #[error("Failed to parse response from '{0}': {1}")]

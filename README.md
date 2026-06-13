@@ -21,8 +21,18 @@ A Linux port of [CodexBar](https://github.com/steipete/CodexBar) by
 ## Usage
 
 ```bash
-# List available providers
+# List providers and their enabled state
 usage-monitor-cli list
+
+# Providers are auto-enabled when their credentials are detected.
+# Override with an explicit toggle (persisted in
+# ~/.config/usage-monitor/config.toml), or return to auto-detection:
+usage-monitor-cli enable openai
+usage-monitor-cli disable codex
+usage-monitor-cli auto codex
+
+# Fetch all enabled providers
+usage-monitor-cli fetch
 
 # Claude subscription usage (reads Claude Code CLI credentials)
 usage-monitor-cli fetch claude

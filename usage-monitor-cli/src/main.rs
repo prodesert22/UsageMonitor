@@ -1,8 +1,9 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand};
+use usage_monitor_core::config::AppConfig;
 use usage_monitor_core::provider::registry::ProviderRegistry;
 use usage_monitor_core::provider::ProviderContext;
-use usage_monitor_core::{RateWindow, UsageSnapshot};
+use usage_monitor_core::{ProviderState, RateWindow, UsageSnapshot};
 
 #[derive(Parser)]
 #[command(name = "usage-monitor", about = "AI API usage monitor for your terminal", version)]
@@ -13,19 +14,34 @@ struct Cli {
 
 #[derive(Subcommand)]
 enum Command {
-    /// List available providers
+    /// List available providers and their enabled state
     List,
-    /// Fetch usage for a provider
-    Fetch {
-        /// Provider ID (e.g. claude, anthropic, openai)
+    /// Enable a provider (persisted in the config file)
+    Enable {
+        /// Provider ID (e.g. claude, codex, anthropic, openai)
         provider: String,
+    },
+    /// Disable a provider (persisted in the config file)
+    Disable {
+        /// Provider ID (e.g. claude, codex, anthropic, openai)
+        provider: String,
+    },
+    /// Return a provider to auto-detection (remove the explicit toggle)
+    Auto {
+        /// Provider ID (e.g. claude, codex, anthropic, openai)
+        provider: String,
+    },
+    /// Fetch usage for a provider, or for all enabled providers when omitted
+    Fetch {
+        /// Provider ID (e.g. claude, codex, anthropic, openai)
+        provider: Option<String>,
         /// Print the full snapshot as JSON
         #[arg(long)]
         json: bool,
         /// API key (alternative to environment variables)
         #[arg(long)]
         api_key: Option<String>,
-        /// Credentials file path (claude provider)
+        /// Credentials file path (claude/codex providers)
         #[arg(long)]
         credentials_path: Option<String>,
     },
@@ -35,15 +51,28 @@ enum Command {
 async fn main() -> Result<()> {
     let cli = Cli::parse();
     let registry = ProviderRegistry::with_defaults();
+    let config = AppConfig::load().map_err(|e| anyhow::anyhow!("{}", e))?;
 
     match cli.command {
         Command::List => {
             let mut metas = registry.all_metadata();
             metas.sort_by_key(|m| m.id);
             for meta in metas {
-                println!("{:<12} {} — {}", meta.id, meta.name, meta.description);
+                let state = registry
+                    .provider_state(meta.id, &config)
+                    .expect("registered provider");
+                let label = match state {
+                    ProviderState::Enabled => "enabled",
+                    ProviderState::Disabled => "disabled",
+                    ProviderState::AutoEnabled => "enabled (auto)",
+                    ProviderState::AutoDisabled => "disabled (auto)",
+                };
+                println!("{:<12} {:<16} {} — {}", meta.id, label, meta.name, meta.description);
             }
         }
+        Command::Enable { provider } => set_enabled(&registry, config, &provider, Some(true))?,
+        Command::Disable { provider } => set_enabled(&registry, config, &provider, Some(false))?,
+        Command::Auto { provider } => set_enabled(&registry, config, &provider, None)?,
         Command::Fetch {
             provider,
             json,
@@ -58,19 +87,84 @@ async fn main() -> Result<()> {
                 ctx.config.insert("credentials_path".into(), path);
             }
 
-            let snapshot = registry
-                .fetch(&provider, &ctx)
-                .await
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-
-            if json {
-                println!("{}", serde_json::to_string_pretty(&snapshot)?);
-            } else {
-                print_snapshot(&snapshot);
+            match provider {
+                Some(id) => {
+                    if registry.provider_state(&id, &config) == Some(ProviderState::Disabled) {
+                        anyhow::bail!(
+                            "provider '{}' is disabled; enable it with `usage-monitor-cli enable {}`",
+                            id,
+                            id
+                        );
+                    }
+                    let snapshot = registry
+                        .fetch(&id, &ctx)
+                        .await
+                        .map_err(|e| anyhow::anyhow!("{}", e))?;
+                    print_result(&snapshot, json)?;
+                }
+                None => {
+                    let ids = registry.enabled_ids(&config);
+                    if ids.is_empty() {
+                        println!("No enabled providers. Use `enable <provider>` or set up credentials.");
+                        return Ok(());
+                    }
+                    let mut first = true;
+                    for id in ids {
+                        if !first {
+                            println!();
+                        }
+                        first = false;
+                        match registry.fetch(&id, &ctx).await {
+                            Ok(snapshot) => print_result(&snapshot, json)?,
+                            Err(e) => println!("{}: error: {}", id, e),
+                        }
+                    }
+                }
             }
         }
     }
 
+    Ok(())
+}
+
+fn set_enabled(
+    registry: &ProviderRegistry,
+    mut config: AppConfig,
+    provider: &str,
+    enabled: Option<bool>,
+) -> Result<()> {
+    if registry.get(provider).is_none() {
+        anyhow::bail!("unknown provider '{}'", provider);
+    }
+    match enabled {
+        Some(value) => config.set_provider_enabled(provider, value),
+        None => config.clear_provider_enabled(provider),
+    }
+    let path = AppConfig::default_path()
+        .ok_or_else(|| anyhow::anyhow!("cannot resolve config path (HOME not set)"))?;
+    config
+        .save_to_path(&path)
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+
+    let state = registry
+        .provider_state(provider, &config)
+        .expect("registered provider");
+    let label = match state {
+        ProviderState::Enabled => "enabled".to_string(),
+        ProviderState::Disabled => "disabled".to_string(),
+        ProviderState::AutoEnabled => "auto (currently enabled)".to_string(),
+        ProviderState::AutoDisabled => "auto (currently disabled)".to_string(),
+    };
+    println!("{}: {} ({})", provider, label, path.display());
+    Ok(())
+}
+
+fn print_result(snapshot: &UsageSnapshot, json: bool) -> Result<()> {
+    if json {
+        println!("{}", serde_json::to_string_pretty(snapshot)?);
+    } else {
+        print_snapshot(snapshot);
+    }
     Ok(())
 }
 

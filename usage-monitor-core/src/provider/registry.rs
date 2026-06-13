@@ -1,5 +1,6 @@
 use std::collections::HashMap;
 
+use crate::config::{AppConfig, ProviderState};
 use crate::error::SpendPanelError;
 
 use super::{ProviderContext, ProviderMetadata, UsageProvider};
@@ -60,6 +61,47 @@ impl ProviderRegistry {
             Some(provider) => provider.fetch_usage(ctx).await,
             None => Err(SpendPanelError::ProviderNotFound(id.to_string())),
         }
+    }
+
+    /// Resolves the enablement state of a provider: explicit config toggle
+    /// wins, otherwise credential detection decides.
+    pub fn provider_state(&self, id: &str, config: &AppConfig) -> Option<ProviderState> {
+        let provider = self.get(id)?;
+        Some(config.resolve_state(id, provider.detect_credentials()))
+    }
+
+    /// IDs of all enabled providers (explicitly or by credential detection).
+    pub fn enabled_ids(&self, config: &AppConfig) -> Vec<String> {
+        let mut ids: Vec<String> = self
+            .all()
+            .iter()
+            .filter(|p| {
+                config
+                    .resolve_state(p.metadata().id, p.detect_credentials())
+                    .is_enabled()
+            })
+            .map(|p| p.metadata().id.to_string())
+            .collect();
+        ids.sort();
+        ids
+    }
+
+    /// Fetches usage from all enabled providers.
+    pub async fn fetch_enabled(
+        &self,
+        config: &AppConfig,
+        ctx_overrides: Option<&HashMap<String, ProviderContext>>,
+    ) -> Vec<(String, Result<crate::model::UsageSnapshot, SpendPanelError>)> {
+        let mut results = Vec::new();
+        for id in self.enabled_ids(config) {
+            let ctx = ctx_overrides
+                .and_then(|o| o.get(id.as_str()))
+                .cloned()
+                .unwrap_or_default();
+            let result = self.fetch(&id, &ctx).await;
+            results.push((id, result));
+        }
+        results
     }
 
     /// Fetches usage from all registered providers.
@@ -203,6 +245,80 @@ mod tests {
 
         let result = reg.fetch("bad", &ProviderContext::new()).await;
         assert!(result.is_err());
+    }
+
+    struct DetectableProvider {
+        meta: ProviderMetadata,
+    }
+
+    #[async_trait]
+    impl UsageProvider for DetectableProvider {
+        fn metadata(&self) -> &ProviderMetadata {
+            &self.meta
+        }
+
+        fn detect_credentials(&self) -> bool {
+            true
+        }
+
+        async fn fetch_usage(
+            &self,
+            _ctx: &ProviderContext,
+        ) -> Result<UsageSnapshot, SpendPanelError> {
+            Ok(UsageSnapshot::new(self.meta.id))
+        }
+    }
+
+    fn detectable(id: &'static str) -> DetectableProvider {
+        DetectableProvider {
+            meta: ProviderMetadata {
+                id,
+                name: id,
+                description: "mock",
+                auth_methods: &["mock"],
+                website: None,
+            },
+        }
+    }
+
+    #[test]
+    fn test_provider_state_and_enabled_ids() {
+        use crate::config::{AppConfig, ProviderState};
+
+        let mut reg = ProviderRegistry::new();
+        reg.register(Box::new(detectable("auto-on"))); // detect = true
+        reg.register(Box::new(MockProvider::new("auto-off"))); // detect = false
+        reg.register(Box::new(MockProvider::new("forced-on")));
+        reg.register(Box::new(detectable("forced-off")));
+
+        let mut cfg = AppConfig::default();
+        cfg.set_provider_enabled("forced-on", true);
+        cfg.set_provider_enabled("forced-off", false);
+
+        assert_eq!(reg.provider_state("auto-on", &cfg), Some(ProviderState::AutoEnabled));
+        assert_eq!(reg.provider_state("auto-off", &cfg), Some(ProviderState::AutoDisabled));
+        assert_eq!(reg.provider_state("forced-on", &cfg), Some(ProviderState::Enabled));
+        assert_eq!(reg.provider_state("forced-off", &cfg), Some(ProviderState::Disabled));
+        assert_eq!(reg.provider_state("ghost", &cfg), None);
+
+        assert_eq!(reg.enabled_ids(&cfg), vec!["auto-on", "forced-on"]);
+    }
+
+    #[tokio::test]
+    async fn test_fetch_enabled_skips_disabled() {
+        use crate::config::AppConfig;
+
+        let mut reg = ProviderRegistry::new();
+        reg.register(Box::new(detectable("on")));
+        reg.register(Box::new(detectable("off")));
+
+        let mut cfg = AppConfig::default();
+        cfg.set_provider_enabled("off", false);
+
+        let results = reg.fetch_enabled(&cfg, None).await;
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].0, "on");
+        assert!(results[0].1.is_ok());
     }
 
     #[tokio::test]
