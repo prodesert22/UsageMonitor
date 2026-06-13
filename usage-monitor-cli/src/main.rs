@@ -72,10 +72,7 @@ enum ProviderConfigCmd {
     /// Show a provider's config (secret values are masked)
     Show,
     /// Set a config value
-    Set {
-        key: String,
-        value: String,
-    },
+    Set { key: String, value: String },
     /// Remove a config key
     Unset { key: String },
 }
@@ -287,7 +284,9 @@ fn handle_provider_config(
                     println!("(no workspaces configured — auto-discovery will be used)");
                 } else {
                     for entry in &current {
-                        match usage_monitor_core::provider::opencode_go::parse_workspace_entry(entry) {
+                        match usage_monitor_core::provider::opencode_go::parse_workspace_entry(
+                            entry,
+                        ) {
                             Some(ws) => match &ws.name {
                                 Some(name) => println!("{:<30} {}", ws.id, name),
                                 None => println!("{}", ws.id),
@@ -570,7 +569,10 @@ fn snapshot_text_width(snap: &UsageSnapshot) -> usize {
     if let Some(credits) = &snap.credits {
         let line = match (credits.used, credits.total) {
             (Some(used), Some(total)) => {
-                format!("Credits: {:.2}/{:.2} {} used", used, total, credits.currency)
+                format!(
+                    "Credits: {:.2}/{:.2} {} used",
+                    used, total, credits.currency
+                )
             }
             _ => format!("Credits: {:.2} {}", credits.balance, credits.currency),
         };
@@ -579,7 +581,11 @@ fn snapshot_text_width(snap: &UsageSnapshot) -> usize {
 
     if let Some(cost) = &snap.cost {
         if let Some(total) = cost.total_cost {
-            width = width.max(format!("Cost (period): {:.2} {}", total, cost.currency).chars().count());
+            width = width.max(
+                format!("Cost (period): {:.2} {}", total, cost.currency)
+                    .chars()
+                    .count(),
+            );
         }
         for day in &cost.daily_costs {
             let tokens = match (day.tokens_input, day.tokens_output) {
@@ -587,9 +593,12 @@ fn snapshot_text_width(snap: &UsageSnapshot) -> usize {
                 _ => String::new(),
             };
             width = width.max(
-                format!("  {}  {:.2} {}{}", day.date, day.cost, cost.currency, tokens)
-                    .chars()
-                    .count(),
+                format!(
+                    "  {}  {:.2} {}{}",
+                    day.date, day.cost, cost.currency, tokens
+                )
+                .chars()
+                .count(),
             );
         }
     }

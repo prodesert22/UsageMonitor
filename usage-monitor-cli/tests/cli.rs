@@ -156,12 +156,7 @@ fn test_fetch_all_without_enabled_providers() {
 #[test]
 fn test_provider_config_set_show_unset() {
     let env = TestEnv::new("config-set");
-    let out = env.run(&[
-        "opencode-go",
-        "set",
-        "token",
-        "session=secret-cookie-value",
-    ]);
+    let out = env.run(&["opencode-go", "set", "token", "session=secret-cookie-value"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
     // Secret values are masked in output.
     assert!(!stdout(&out).contains("secret-cookie-value"));
@@ -193,6 +188,9 @@ fn test_workspace_add_remove_list() {
     let env = TestEnv::new("workspace");
     let out = env.run(&["opencode-go", "workspace", "add", "wrk_first"]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
+    let out = env.run(&["opencode-go", "workspace", "add", "wrk_first"]);
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("already configured"));
 
     // URL form is accepted and normalized.
     let out = env.run(&[
@@ -224,6 +222,10 @@ fn test_workspace_add_remove_list() {
     let out = env.run(&["opencode-go", "workspace", "list"]);
     assert!(stdout(&out).contains("auto-discovery"));
 
+    let out = env.run(&["opencode-go", "workspace", "remove", "wrk_second"]);
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("not configured"));
+
     // Optional display name persists as `id=Name` and shows in list.
     env.run(&["opencode-go", "workspace", "add", "wrk_named", "Production"]);
     let raw = std::fs::read_to_string(env.config_path()).unwrap();
@@ -236,6 +238,16 @@ fn test_workspace_add_remove_list() {
     // Invalid reference fails instead of silently wiping.
     let out = env.run(&["opencode-go", "workspace", "add", "not-a-workspace"]);
     assert!(!out.status.success());
+
+    let out = env.run(&[
+        "opencode-go",
+        "workspace",
+        "add",
+        "wrk_comma",
+        "Client, Production",
+    ]);
+    assert!(!out.status.success());
+    assert!(stderr(&out).contains("cannot contain comma"));
 }
 
 #[test]

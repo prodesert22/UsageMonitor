@@ -357,9 +357,34 @@ pub fn parse_workspace_entry(raw: &str) -> Option<WorkspaceRef> {
     Some(WorkspaceRef { id, name })
 }
 
+fn validate_workspace_name(name: &str) -> Result<(), SpendPanelError> {
+    if name.contains(',') {
+        return Err(SpendPanelError::ConfigError(
+            "workspace name cannot contain comma".into(),
+        ));
+    }
+    Ok(())
+}
+
+fn canonical_workspace_refs(list: &[String]) -> Vec<WorkspaceRef> {
+    let mut refs: Vec<WorkspaceRef> = Vec::new();
+    for ws in list.iter().filter_map(|e| parse_workspace_entry(e)) {
+        match refs.iter_mut().find(|existing| existing.id == ws.id) {
+            Some(existing) => {
+                if ws.name.is_some() {
+                    existing.name = ws.name;
+                }
+            }
+            None => refs.push(ws),
+        }
+    }
+    refs
+}
+
 /// Adds a workspace (id or dashboard URL, with an optional name) to a list of
 /// config entries. Errors when the reference has no `wrk_` id. Adding an
-/// existing id updates its name; otherwise duplicates are a no-op.
+/// existing id only succeeds when a new/changed name is provided; unchanged
+/// duplicates are rejected.
 pub fn add_workspace(
     list: &[String],
     raw: &str,
@@ -372,17 +397,23 @@ pub fn add_workspace(
         ))
     })?;
     if let Some(name) = name.map(str::trim).filter(|n| !n.is_empty()) {
+        validate_workspace_name(name)?;
         new_ref.name = Some(name.to_string());
     }
+    if let Some(name) = &new_ref.name {
+        validate_workspace_name(name)?;
+    }
 
-    let mut refs: Vec<WorkspaceRef> = list
-        .iter()
-        .filter_map(|e| parse_workspace_entry(e))
-        .collect();
+    let mut refs = canonical_workspace_refs(list);
     match refs.iter_mut().find(|r| r.id == new_ref.id) {
         Some(existing) => {
-            if new_ref.name.is_some() {
+            if new_ref.name.is_some() && existing.name != new_ref.name {
                 existing.name = new_ref.name;
+            } else {
+                return Err(SpendPanelError::ConfigError(format!(
+                    "workspace '{}' is already configured",
+                    existing.id
+                )));
             }
         }
         None => refs.push(new_ref),
@@ -395,10 +426,18 @@ pub fn remove_workspace(list: &[String], raw: &str) -> Result<Vec<String>, Spend
     let id = normalize_workspace_id(raw).ok_or_else(|| {
         SpendPanelError::ConfigError(format!("'{}' has no workspace id (expected wrk_...)", raw))
     })?;
-    Ok(list
-        .iter()
-        .filter(|e| parse_workspace_entry(e).is_none_or(|r| r.id != id))
-        .cloned()
+    let refs = canonical_workspace_refs(list);
+    if !refs.iter().any(|r| r.id == id) {
+        return Err(SpendPanelError::ConfigError(format!(
+            "workspace '{}' is not configured",
+            id
+        )));
+    }
+
+    Ok(refs
+        .into_iter()
+        .filter(|r| r.id != id)
+        .map(|r| r.to_entry())
         .collect())
 }
 
@@ -622,9 +661,9 @@ mod tests {
         assert_eq!(v, vec!["wrk_a"]);
         let v = add_workspace(&v, "https://opencode.ai/workspace/wrk_b/go", None).unwrap();
         assert_eq!(v, vec!["wrk_a", "wrk_b"]);
-        // Duplicate is a no-op.
-        let v = add_workspace(&v, "wrk_a", None).unwrap();
-        assert_eq!(v, vec!["wrk_a", "wrk_b"]);
+        // Duplicate without changes is rejected.
+        let err = add_workspace(&v, "wrk_a", None).unwrap_err();
+        assert!(err.to_string().contains("already configured"));
         assert!(add_workspace(&v, "not-a-workspace", None).is_err());
     }
 
@@ -635,9 +674,34 @@ mod tests {
         // Re-adding with a new name updates it.
         let v = add_workspace(&v, "wrk_a", Some("Staging")).unwrap();
         assert_eq!(v, vec!["wrk_a=Staging"]);
-        // Re-adding without a name keeps the existing one.
-        let v = add_workspace(&v, "wrk_a", None).unwrap();
-        assert_eq!(v, vec!["wrk_a=Staging"]);
+        // Re-adding without a name is rejected because it would not change anything.
+        let err = add_workspace(&v, "wrk_a", None).unwrap_err();
+        assert!(err.to_string().contains("already configured"));
+        // Re-adding with the same name is also rejected.
+        let err = add_workspace(&v, "wrk_a", Some("Staging")).unwrap_err();
+        assert!(err.to_string().contains("already configured"));
+    }
+
+    #[test]
+    fn test_add_workspace_rejects_comma_in_name() {
+        let err = add_workspace(&[], "wrk_a", Some("Client, Production")).unwrap_err();
+        assert!(err.to_string().contains("cannot contain comma"));
+
+        let err = add_workspace(&[], "wrk_a=Client, Production", None).unwrap_err();
+        assert!(err.to_string().contains("cannot contain comma"));
+    }
+
+    #[test]
+    fn test_add_workspace_deduplicates_existing_config() {
+        let list = vec![
+            "wrk_a".to_string(),
+            "wrk_a=Production".to_string(),
+            "wrk_b=Old".to_string(),
+            "wrk_b=New".to_string(),
+        ];
+
+        let v = add_workspace(&list, "wrk_c", None).unwrap();
+        assert_eq!(v, vec!["wrk_a=Production", "wrk_b=New", "wrk_c"]);
     }
 
     #[test]
@@ -671,9 +735,24 @@ mod tests {
         let list = vec!["wrk_a".to_string(), "wrk_b".to_string()];
         assert_eq!(remove_workspace(&list, "wrk_a").unwrap(), vec!["wrk_b"]);
         assert!(remove_workspace(&list[..1], "wrk_a").unwrap().is_empty());
-        assert_eq!(remove_workspace(&list, "wrk_other").unwrap(), list);
+        let err = remove_workspace(&list, "wrk_other").unwrap_err();
+        assert!(err.to_string().contains("not configured"));
         // Invalid reference is an error, not a silent wipe.
         assert!(remove_workspace(&list, "garbage").is_err());
+    }
+
+    #[test]
+    fn test_remove_workspace_deduplicates_remaining_config() {
+        let list = vec![
+            "wrk_a".to_string(),
+            "wrk_b".to_string(),
+            "wrk_b=Production".to_string(),
+            "wrk_c".to_string(),
+            "wrk_c".to_string(),
+        ];
+
+        let v = remove_workspace(&list, "wrk_a").unwrap();
+        assert_eq!(v, vec!["wrk_b=Production", "wrk_c"]);
     }
 
     #[test]
@@ -812,10 +891,7 @@ mod tests {
 
     #[test]
     fn test_normalize_cookie_header_prefixes_bare_auth_value() {
-        assert_eq!(
-            normalize_cookie_header("Fe26.2**abc"),
-            "auth=Fe26.2**abc"
-        );
+        assert_eq!(normalize_cookie_header("Fe26.2**abc"), "auth=Fe26.2**abc");
     }
 
     #[test]
@@ -1004,7 +1080,10 @@ mod tests {
         // Name enrichment is best-effort; a broken discovery endpoint must
         // not break pinned workspaces.
         let snap = provider.fetch_usage(&ctx).await.unwrap();
-        assert_eq!(snap.primary_rate_window.unwrap().label, "wrk_one Rolling (5h)");
+        assert_eq!(
+            snap.primary_rate_window.unwrap().label,
+            "wrk_one Rolling (5h)"
+        );
     }
 
     #[tokio::test]
