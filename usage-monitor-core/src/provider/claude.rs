@@ -192,6 +192,11 @@ impl ClaudeProvider {
         self.token_base.as_deref().unwrap_or(DEFAULT_TOKEN_BASE)
     }
 
+    /// Detection helper: credentials exist at the given path.
+    fn detect_credentials_at(path: Option<&Path>) -> bool {
+        path.is_some_and(|p| p.exists())
+    }
+
     fn credentials_path(ctx: &ProviderContext) -> Result<PathBuf, SpendPanelError> {
         if let Some(p) = ctx.config.get("credentials_path") {
             return Ok(PathBuf::from(p));
@@ -435,7 +440,7 @@ impl UsageProvider for ClaudeProvider {
     }
 
     fn detect_credentials(&self) -> bool {
-        ClaudeOAuthCredentials::default_path().is_some_and(|p| p.exists())
+        ClaudeProvider::detect_credentials_at(ClaudeOAuthCredentials::default_path().as_deref())
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
@@ -728,6 +733,15 @@ mod tests {
         let result = provider.fetch_usage(&ctx).await;
         std::fs::remove_file(&creds_path).ok();
         assert!(matches!(result, Err(SpendPanelError::AuthFailed(_, _))));
+    }
+
+    #[test]
+    fn test_detect_credentials_at() {
+        let existing = write_temp_credentials("detect", &credentials_json("at", future_millis()));
+        assert!(ClaudeProvider::detect_credentials_at(Some(&existing)));
+        std::fs::remove_file(&existing).ok();
+        assert!(!ClaudeProvider::detect_credentials_at(Some(&existing)));
+        assert!(!ClaudeProvider::detect_credentials_at(None));
     }
 
     #[tokio::test]

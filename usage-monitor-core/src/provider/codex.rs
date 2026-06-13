@@ -188,6 +188,11 @@ impl CodexProvider {
         self.token_base.as_deref().unwrap_or(DEFAULT_TOKEN_BASE)
     }
 
+    /// Detection helper: credentials exist at the given path.
+    fn detect_credentials_at(path: Option<&Path>) -> bool {
+        path.is_some_and(|p| p.exists())
+    }
+
     fn credentials_path(ctx: &ProviderContext) -> Result<PathBuf, SpendPanelError> {
         if let Some(p) = ctx.config.get("credentials_path") {
             return Ok(PathBuf::from(p));
@@ -441,7 +446,7 @@ impl UsageProvider for CodexProvider {
     }
 
     fn detect_credentials(&self) -> bool {
-        CodexOAuthCredentials::default_path().is_some_and(|p| p.exists())
+        CodexProvider::detect_credentials_at(CodexOAuthCredentials::default_path().as_deref())
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
@@ -624,6 +629,34 @@ mod tests {
         };
         let result = CodexProvider::fetch_wham_usage(&server.uri(), &client, &creds).await;
         assert!(matches!(result, Err(SpendPanelError::AuthFailed(_, _))));
+    }
+
+    #[test]
+    fn test_detect_credentials_at() {
+        let existing = write_temp_auth("detect", &auth_json("at"));
+        assert!(CodexProvider::detect_credentials_at(Some(&existing)));
+        std::fs::remove_file(&existing).ok();
+        assert!(!CodexProvider::detect_credentials_at(Some(&existing)));
+        assert!(!CodexProvider::detect_credentials_at(None));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_wham_usage_429() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/backend-api/wham/usage"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "60"))
+            .mount(&server)
+            .await;
+
+        let client = reqwest::Client::new();
+        let creds = CodexOAuthCredentials {
+            access_token: "at".into(),
+            refresh_token: None,
+            account_id: None,
+        };
+        let result = CodexProvider::fetch_wham_usage(&server.uri(), &client, &creds).await;
+        assert!(matches!(result, Err(SpendPanelError::RateLimited(_, Some(60)))));
     }
 
     #[tokio::test]

@@ -78,6 +78,11 @@ impl AnthropicProvider {
         self.base_url.as_deref().unwrap_or("https://api.anthropic.com")
     }
 
+    /// Detection helper: a non-empty API key is available.
+    fn detect_credentials_from(key: Option<&str>) -> bool {
+        key.is_some_and(|k| !k.is_empty())
+    }
+
     fn resolve_api_key(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
         if let Some(key) = ctx.config.get("api_key") {
             if !key.is_empty() {
@@ -218,7 +223,7 @@ impl UsageProvider for AnthropicProvider {
     }
 
     fn detect_credentials(&self) -> bool {
-        std::env::var("ANTHROPIC_API_KEY").is_ok_and(|k| !k.is_empty())
+        AnthropicProvider::detect_credentials_from(std::env::var("ANTHROPIC_API_KEY").ok().as_deref())
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
@@ -366,6 +371,13 @@ mod tests {
         let m = p.metadata();
         assert_eq!(m.id, "anthropic");
         assert!(m.auth_methods.contains(&"api_key"));
+    }
+
+    #[test]
+    fn test_detect_credentials_from() {
+        assert!(AnthropicProvider::detect_credentials_from(Some("sk-ant-x")));
+        assert!(!AnthropicProvider::detect_credentials_from(Some("")));
+        assert!(!AnthropicProvider::detect_credentials_from(None));
     }
 
     #[tokio::test]

@@ -33,3 +33,26 @@ pub enum SpendPanelError {
     #[error("Timeout fetching '{0}'")]
     Timeout(String),
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_rate_limited_message_with_seconds() {
+        let e = SpendPanelError::RateLimited("claude".into(), Some(120));
+        assert_eq!(e.to_string(), "Rate limited by 'claude', retry after 120s");
+    }
+
+    #[test]
+    fn test_rate_limited_message_zero_seconds() {
+        let e = SpendPanelError::RateLimited("claude".into(), Some(0));
+        assert_eq!(e.to_string(), "Rate limited by 'claude', try again in a few minutes");
+    }
+
+    #[test]
+    fn test_rate_limited_message_no_seconds() {
+        let e = SpendPanelError::RateLimited("codex".into(), None);
+        assert_eq!(e.to_string(), "Rate limited by 'codex', try again in a few minutes");
+    }
+}

@@ -102,6 +102,11 @@ impl OpenAIProvider {
         self.base_url.as_deref().unwrap_or("https://api.openai.com")
     }
 
+    /// Detection helper: a non-empty API key is available.
+    fn detect_credentials_from(key: Option<&str>) -> bool {
+        key.is_some_and(|k| !k.is_empty())
+    }
+
     /// Extracts the API key from context or environment variable.
     fn resolve_api_key(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
         if let Some(key) = ctx.config.get("api_key") {
@@ -269,7 +274,7 @@ impl UsageProvider for OpenAIProvider {
     }
 
     fn detect_credentials(&self) -> bool {
-        std::env::var("OPENAI_API_KEY").is_ok_and(|k| !k.is_empty())
+        OpenAIProvider::detect_credentials_from(std::env::var("OPENAI_API_KEY").ok().as_deref())
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
@@ -376,6 +381,13 @@ mod tests {
         let ctx = ProviderContext::new();
         let result = OpenAIProvider::resolve_api_key(&ctx);
         assert!(matches!(result, Err(SpendPanelError::AuthFailed(_, _))));
+    }
+
+    #[test]
+    fn test_detect_credentials_from() {
+        assert!(OpenAIProvider::detect_credentials_from(Some("sk-x")));
+        assert!(!OpenAIProvider::detect_credentials_from(Some("")));
+        assert!(!OpenAIProvider::detect_credentials_from(None));
     }
 
     #[test]
