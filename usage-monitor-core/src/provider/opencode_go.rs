@@ -250,27 +250,21 @@ impl OpenCodeGoProvider {
             return snapshot;
         };
 
-        // With a single workspace the plain labels suffice; with several, the
-        // first one is prefixed with its name like the extra windows.
-        let prefix = if usages.len() > 1 {
-            format!("{} ", first.workspace.display_name())
-        } else {
-            String::new()
-        };
+        let first_name = first.workspace.display_name();
 
         snapshot.primary_rate_window = Some(Self::rate_window(
-            format!("{}Rolling (5h)", prefix),
+            format!("{} Rolling (5h)", first_name),
             300,
             &first.rolling,
         ));
         snapshot.secondary_rate_window = Some(Self::rate_window(
-            format!("{}Weekly", prefix),
+            format!("{} Weekly", first_name),
             10_080,
             &first.weekly,
         ));
         if let Some(monthly) = &first.monthly {
             snapshot.tertiary_rate_window = Some(Self::rate_window(
-                format!("{}Monthly", prefix),
+                format!("{} Monthly", first_name),
                 43_200,
                 monthly,
             ));
@@ -282,19 +276,19 @@ impl OpenCodeGoProvider {
             let name = ws.display_name();
             snapshot.extra_rate_windows.push(NamedRateWindow {
                 id: format!("{}-rolling", ws.id),
-                label: format!("{} rolling (5h)", name),
-                window: Self::rate_window(format!("{} rolling (5h)", name), 300, &usage.rolling),
+                label: format!("{} Rolling (5h)", name),
+                window: Self::rate_window(format!("{} Rolling (5h)", name), 300, &usage.rolling),
             });
             snapshot.extra_rate_windows.push(NamedRateWindow {
                 id: format!("{}-weekly", ws.id),
-                label: format!("{} weekly", name),
-                window: Self::rate_window(format!("{} weekly", name), 10_080, &usage.weekly),
+                label: format!("{} Weekly", name),
+                window: Self::rate_window(format!("{} Weekly", name), 10_080, &usage.weekly),
             });
             if let Some(monthly) = &usage.monthly {
                 snapshot.extra_rate_windows.push(NamedRateWindow {
                     id: format!("{}-monthly", ws.id),
-                    label: format!("{} monthly", name),
-                    window: Self::rate_window(format!("{} monthly", name), 43_200, monthly),
+                    label: format!("{} Monthly", name),
+                    window: Self::rate_window(format!("{} Monthly", name), 43_200, monthly),
                 });
             }
         }
@@ -453,27 +447,35 @@ fn extract_string(segment: &str, key: &str) -> Option<String> {
 /// Extracts `<window>...usagePercent: N` / `resetInSec: N` pairs from the
 /// dashboard hydration payload.
 fn parse_window(text: &str, window_key: &str) -> Option<ParsedWindow> {
-    let start = text.find(window_key)?;
-    // Window object ends at the first closing brace after the key.
-    let segment_end = text[start..]
-        .find('}')
-        .map(|i| start + i)
-        .unwrap_or(text.len());
-    let segment = &text[start..segment_end];
+    for (start, _) in text.match_indices(window_key) {
+        // Window object ends at the first closing brace after the key. Some
+        // payloads also contain scalar billing fields such as
+        // `monthlyUsage:null` before the real workspace usage object; skip
+        // segments without `usagePercent` and keep searching.
+        let segment_end = text[start..]
+            .find('}')
+            .map(|i| start + i)
+            .unwrap_or(text.len());
+        let segment = &text[start..segment_end];
 
-    let percent = extract_number(segment, "usagePercent")?;
-    let reset_in_sec = extract_number(segment, "resetInSec").unwrap_or(0.0) as i64;
+        let Some(percent) = extract_number(segment, "usagePercent") else {
+            continue;
+        };
+        let reset_in_sec = extract_number(segment, "resetInSec").unwrap_or(0.0) as i64;
 
-    // Some payload variants emit ratios instead of percentages.
-    let percent = if (0.0..=1.0).contains(&percent) {
-        percent * 100.0
-    } else {
-        percent
-    };
-    Some(ParsedWindow {
-        percent: percent.clamp(0.0, 100.0),
-        reset_in_sec,
-    })
+        // Some payload variants emit ratios instead of percentages.
+        let percent = if (0.0..=1.0).contains(&percent) {
+            percent * 100.0
+        } else {
+            percent
+        };
+        return Some(ParsedWindow {
+            percent: percent.clamp(0.0, 100.0),
+            reset_in_sec,
+        });
+    }
+
+    None
 }
 
 /// Finds `key: <number>` (with optional quotes around the number) inside a segment.
@@ -712,6 +714,18 @@ mod tests {
     }
 
     #[test]
+    fn test_parse_window_skips_scalar_billing_usage() {
+        let page = r#"
+            billing:{monthlyUsage:null,timeMonthlyUsageUpdated:null}
+            workspace:{monthlyUsage:{status:"ok",resetInSec:72652,usagePercent:99}}
+        "#;
+
+        let monthly = parse_window(page, "monthlyUsage").unwrap();
+        assert_eq!(monthly.percent, 99.0);
+        assert_eq!(monthly.reset_in_sec, 72652);
+    }
+
+    #[test]
     fn test_parse_window_ratio_heuristic() {
         // Values <= 1.0 are ratios and get scaled to percent.
         let page = "rollingUsage:{usagePercent:0.42,resetInSec:60}";
@@ -851,6 +865,7 @@ mod tests {
         assert_eq!(snap.extra_rate_windows.len(), 3);
         assert_eq!(snap.extra_rate_windows[0].id, "wrk_two-rolling");
         assert_eq!(snap.extra_rate_windows[2].id, "wrk_two-monthly");
+        assert_eq!(snap.extra_rate_windows[2].label, "wrk_two Monthly");
         assert_eq!(
             snap.extra_rate_windows[1].window.status,
             RateWindowStatus::Critical
@@ -924,7 +939,7 @@ mod tests {
             snap.primary_rate_window.unwrap().label,
             "Production Rolling (5h)"
         );
-        assert_eq!(snap.extra_rate_windows[0].label, "Staging rolling (5h)");
+        assert_eq!(snap.extra_rate_windows[0].label, "Staging Rolling (5h)");
     }
 
     #[tokio::test]
@@ -961,7 +976,7 @@ mod tests {
             snap.primary_rate_window.unwrap().label,
             "Production Rolling (5h)"
         );
-        assert_eq!(snap.extra_rate_windows[0].label, "Manual rolling (5h)");
+        assert_eq!(snap.extra_rate_windows[0].label, "Manual Rolling (5h)");
     }
 
     #[tokio::test]
@@ -989,7 +1004,7 @@ mod tests {
         // Name enrichment is best-effort; a broken discovery endpoint must
         // not break pinned workspaces.
         let snap = provider.fetch_usage(&ctx).await.unwrap();
-        assert_eq!(snap.primary_rate_window.unwrap().label, "Rolling (5h)");
+        assert_eq!(snap.primary_rate_window.unwrap().label, "wrk_one Rolling (5h)");
     }
 
     #[tokio::test]
