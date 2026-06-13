@@ -1,6 +1,7 @@
 pub mod registry;
 pub mod anthropic;
 pub mod claude;
+pub mod codex;
 pub mod openai;
 
 use async_trait::async_trait;

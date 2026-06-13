@@ -21,6 +21,7 @@ impl ProviderRegistry {
         let mut reg = Self::new();
         reg.register(Box::new(super::anthropic::AnthropicProvider::new()));
         reg.register(Box::new(super::claude::ClaudeProvider::new()));
+        reg.register(Box::new(super::codex::CodexProvider::new()));
         reg.register(Box::new(super::openai::OpenAIProvider::new()));
         reg
     }

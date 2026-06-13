@@ -14,6 +14,7 @@ A Linux port of [CodexBar](https://github.com/steipete/CodexBar) by
 | ID          | Service                       | Auth                                               |
 |-------------|-------------------------------|----------------------------------------------------|
 | `claude`    | Claude Pro/Max (subscription) | Claude Code OAuth (`~/.claude/.credentials.json`)  |
+| `codex`     | Codex / ChatGPT plan          | Codex CLI OAuth (`~/.codex/auth.json`)             |
 | `anthropic` | Anthropic API                 | `ANTHROPIC_API_KEY` or `--api-key`                 |
 | `openai`    | OpenAI API                    | `OPENAI_API_KEY` or `--api-key`                    |
 
