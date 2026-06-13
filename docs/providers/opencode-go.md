@@ -16,22 +16,51 @@ one. Multiple workspaces can be tracked with a single auth token.
 
 1. Open https://opencode.ai and log in.
 2. DevTools → Network tab → reload → click any `opencode.ai` request.
-3. Copy the full value of the `Cookie` request header.
-4. Configure and enable the provider:
+3. Copy either:
+   - the full value of the `Cookie` request header, or
+   - only the OpenCode `auth` cookie value, which usually starts with
+     `Fe26...`.
+4. Configure and enable the provider. Always wrap the token in **single
+   quotes** so your shell does not split or expand characters like `;`, `$`,
+   `*`, and spaces:
 
 ```bash
-usage-monitor-cli config set opencode-go token "<full Cookie header value>"
+usage-monitor-cli opencode-go set token '<full Cookie header value or Fe26 auth value>'
 usage-monitor-cli enable opencode-go
 usage-monitor-cli fetch opencode-go
 ```
 
-The token is the auth credential for this provider. Manage it with the
-generic `config` commands (the value is masked when shown):
+### Accepted token formats
+
+The provider accepts all of these input formats:
 
 ```bash
-usage-monitor-cli config set opencode-go token "<Cookie header>"  # set/replace
-usage-monitor-cli config get opencode-go                          # show (masked)
-usage-monitor-cli config unset opencode-go token                  # remove
+# 1. Bare OpenCode auth cookie value.
+# The CLI automatically sends this as: Cookie: auth=<value>
+usage-monitor-cli opencode-go set token 'Fe26.2**YOUR_FULL_AUTH_VALUE'
+
+# 2. Explicit auth cookie pair.
+usage-monitor-cli opencode-go set token 'auth=Fe26.2**YOUR_FULL_AUTH_VALUE'
+
+# 3. Full Cookie header value copied from DevTools.
+usage-monitor-cli opencode-go set token 'auth=Fe26.2**YOUR_FULL_AUTH_VALUE; other_cookie=value; another=value'
+
+# 4. Full header line copied with the Cookie: prefix.
+# The CLI strips the leading "Cookie:" automatically.
+usage-monitor-cli opencode-go set token 'Cookie: auth=Fe26.2**YOUR_FULL_AUTH_VALUE; other_cookie=value'
+```
+
+If `opencode-go show` prints a short value such as `(28 chars)` but your real
+cookie is much longer, the token was probably pasted without quotes and your
+shell truncated it. Set it again using single quotes.
+
+The token is the auth credential for this provider. Manage it with the
+provider command (the value is masked when shown):
+
+```bash
+usage-monitor-cli opencode-go set token '<Cookie header or Fe26 auth value>'  # set/replace
+usage-monitor-cli opencode-go show                                           # show (masked)
+usage-monitor-cli opencode-go unset token                                    # remove
 ```
 
 ### Pinning workspaces (optional)
@@ -67,14 +96,14 @@ Everything persists flat in `~/.config/usage-monitor/config.toml`:
 
 | Key | Required | Meaning |
 |-----|----------|---------|
-| `token` | yes | Full browser `Cookie` header of a logged-in opencode.ai session |
+| `token` | yes | Full browser `Cookie` header of a logged-in opencode.ai session, `auth=<Fe26...>`, or the bare `Fe26...` auth cookie value. Bare values are automatically sent as `auth=<value>`. |
 | `workspaces` | no | TOML array of `wrk_...` ids, optionally with a display name (`"wrk_id=Name"`); empty/absent → auto-discovery |
 | `enabled` | yes | Must be `true`; the provider is never auto-enabled |
 
 ```toml
 [providers.opencode-go]
 enabled = true
-token = "<full Cookie header value>"
+token = "<Cookie header, auth=Fe26 value, or bare Fe26 value>"
 workspaces = ["wrk_aaaa", "wrk_bbbb=Production"]
 ```
 
@@ -158,8 +187,8 @@ All configured (or discovered) workspaces are fetched with the same token:
 
 | Symptom | Cause | Fix |
 |---------|-------|-----|
-| `no session token configured` | `token` not set | `config set opencode-go token "<Cookie header>"` |
-| `session cookie rejected or expired` | Cookie expired or incomplete | Copy a fresh, full `Cookie` header from DevTools |
+| `no session token configured` | `token` not set | `opencode-go set token '<Cookie header or Fe26 auth value>'` |
+| `session cookie rejected or expired` | Cookie expired, incomplete, or not the OpenCode `auth` cookie | Copy a fresh `Cookie` header from DevTools or the bare `Fe26...` auth value |
 | `no workspace ids in discovery payload` | Server-function hash changed after a redeploy | Pin ids: `opencode-go workspace add wrk_...` |
 | `workspace ... page is missing usage fields` | Dashboard payload shape changed | Open an issue; scraping needs updating |
 

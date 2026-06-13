@@ -28,9 +28,9 @@ A Linux port of [CodexBar](https://github.com/steipete/CodexBar) by
 | `enable <provider>` | Force a provider on, regardless of detection |
 | `disable <provider>` | Force a provider off; it is skipped by `fetch` and direct fetches are refused |
 | `auto <provider>` | Remove the explicit toggle and return to credential auto-detection |
-| `config set <provider> <key> <value>` | Set a provider config value (e.g. `token`, `api_key`, `credentials_path`) |
-| `config get <provider>` | Show a provider's config; secret values are masked |
-| `config unset <provider> <key>` | Remove a config key |
+| `<provider> show` | Show a provider's config; secret values are masked. Supported providers: `opencode-go`, `claude`, `codex`, `anthropic`, `openai` |
+| `<provider> set <key> <value>` | Set a provider config value (e.g. `token`, `api_key`, `credentials_path`) |
+| `<provider> unset <key>` | Remove a provider config key |
 | `opencode-go workspace add <id\|url> [name]` | Add an OpenCode Go workspace; accepts a `wrk_...` id or the dashboard URL, with an optional display name |
 | `opencode-go workspace remove <id\|url>` | Remove a workspace; an empty list returns to auto-discovery |
 | `opencode-go workspace list` | List configured workspaces |
@@ -53,12 +53,18 @@ usage-monitor-cli fetch claude
 usage-monitor-cli fetch anthropic --api-key sk-ant-...
 
 # Persist an API key instead of passing the flag every time
-usage-monitor-cli config set anthropic api_key sk-ant-...
+usage-monitor-cli anthropic set api_key sk-ant-...
+usage-monitor-cli anthropic show
 
 # OpenCode Go: manual token + workspaces (see docs/providers/opencode-go.md)
-usage-monitor-cli config set opencode-go token "<Cookie header>"
+usage-monitor-cli opencode-go set token '<Cookie header, auth=Fe26 value, or bare Fe26 value>'
 usage-monitor-cli enable opencode-go
 usage-monitor-cli opencode-go workspace add https://opencode.ai/workspace/wrk_xxx/go
+
+# Other provider config examples
+usage-monitor-cli openai set api_key sk-...
+usage-monitor-cli claude set credentials_path ~/.claude/.credentials.json
+usage-monitor-cli codex set credentials_path ~/.codex/auth.json
 
 # Machine-readable output
 usage-monitor-cli fetch claude --json

@@ -105,10 +105,10 @@ impl OpenCodeGoProvider {
     fn resolve_cookie(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
         let raw = ctx.config.get("token").or_else(|| ctx.config.get("cookie"));
         match raw.map(|c| c.trim()) {
-            Some(cookie) if !cookie.is_empty() => Ok(cookie.to_string()),
+            Some(cookie) if !cookie.is_empty() => Ok(normalize_cookie_header(cookie)),
             _ => Err(SpendPanelError::AuthFailed(
                 "opencode-go".into(),
-                "no session token configured; run `usage-monitor-cli config set opencode-go token \"<Cookie header>\"` (see docs/providers/opencode-go.md)".into(),
+                "no session token configured; run `usage-monitor opencode-go set token \"<Cookie header or auth value>\"` (see docs/providers/opencode-go.md)".into(),
             )),
         }
     }
@@ -301,6 +301,39 @@ impl OpenCodeGoProvider {
 
         snapshot
     }
+}
+
+/// Normalizes user-provided auth into a valid Cookie header value.
+///
+/// Accepted inputs:
+/// - Full Cookie header value: `auth=Fe26...; other=value`
+/// - Header line copied with name: `Cookie: auth=Fe26...`
+/// - Bare opencode auth cookie value: `Fe26...` → `auth=Fe26...`
+fn normalize_cookie_header(raw: &str) -> String {
+    let value = raw.trim();
+    let value = value
+        .strip_prefix("Cookie:")
+        .or_else(|| value.strip_prefix("cookie:"))
+        .map(str::trim)
+        .unwrap_or(value);
+
+    if looks_like_cookie_header(value) {
+        value.to_string()
+    } else {
+        format!("auth={}", value)
+    }
+}
+
+fn looks_like_cookie_header(value: &str) -> bool {
+    let first_pair = value.split(';').next().unwrap_or(value).trim();
+    let Some((name, cookie_value)) = first_pair.split_once('=') else {
+        return false;
+    };
+    !name.trim().is_empty()
+        && !cookie_value.trim().is_empty()
+        && name
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
 }
 
 /// Normalizes a workspace reference: bare `wrk_...` id, a dashboard URL
@@ -740,6 +773,34 @@ mod tests {
         assert_eq!(
             OpenCodeGoProvider::resolve_cookie(&ctx).unwrap(),
             "session=alias"
+        );
+    }
+
+    #[test]
+    fn test_normalize_cookie_header_accepts_full_cookie_header() {
+        assert_eq!(
+            normalize_cookie_header("auth=Fe26.2**abc; other=value"),
+            "auth=Fe26.2**abc; other=value"
+        );
+    }
+
+    #[test]
+    fn test_normalize_cookie_header_strips_cookie_prefix() {
+        assert_eq!(
+            normalize_cookie_header("Cookie: auth=Fe26.2**abc; other=value"),
+            "auth=Fe26.2**abc; other=value"
+        );
+        assert_eq!(
+            normalize_cookie_header("cookie: auth=Fe26.2**abc"),
+            "auth=Fe26.2**abc"
+        );
+    }
+
+    #[test]
+    fn test_normalize_cookie_header_prefixes_bare_auth_value() {
+        assert_eq!(
+            normalize_cookie_header("Fe26.2**abc"),
+            "auth=Fe26.2**abc"
         );
     }
 

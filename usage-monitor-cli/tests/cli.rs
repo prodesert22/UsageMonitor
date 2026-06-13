@@ -154,12 +154,11 @@ fn test_fetch_all_without_enabled_providers() {
 }
 
 #[test]
-fn test_config_set_get_unset() {
+fn test_provider_config_set_show_unset() {
     let env = TestEnv::new("config-set");
     let out = env.run(&[
-        "config",
-        "set",
         "opencode-go",
+        "set",
         "token",
         "session=secret-cookie-value",
     ]);
@@ -180,21 +179,13 @@ fn test_config_set_get_unset() {
         raw
     );
 
-    let out = env.run(&["config", "get", "opencode-go"]);
+    let out = env.run(&["opencode-go", "show"]);
     assert!(stdout(&out).contains("token = session="));
     assert!(!stdout(&out).contains("secret-cookie-value"));
 
-    env.run(&["config", "unset", "opencode-go", "token"]);
-    let out = env.run(&["config", "get", "opencode-go"]);
-    assert!(stdout(&out).contains("no config"));
-}
-
-#[test]
-fn test_config_set_unknown_provider_fails() {
-    let env = TestEnv::new("config-unknown");
-    let out = env.run(&["config", "set", "ghost", "key", "v"]);
-    assert!(!out.status.success());
-    assert!(stderr(&out).contains("unknown provider 'ghost'"));
+    env.run(&["opencode-go", "unset", "token"]);
+    let out = env.run(&["opencode-go", "show"]);
+    assert!(stdout(&out).contains("provider = opencode-go"));
 }
 
 #[test]
