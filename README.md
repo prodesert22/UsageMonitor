@@ -223,8 +223,8 @@ cargo test -p usage-monitor-core -- provider::anthropic
 # Desktop widget helpers
 python -m unittest discover -s widgets -p 'test_*.py'
 
-# Local quality gate (fmt, clippy, ruff, widget tests, qmllint, size checks)
-python scripts/check_quality.py
+# Local quality gate (fmt, clippy, ruff, widget tests, optional qmllint)
+.githooks/pre-commit
 ```
 
 ## Credits

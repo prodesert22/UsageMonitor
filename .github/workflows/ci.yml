@@ -54,7 +54,7 @@ jobs:
           pip install -r requirements-dev.txt 2>/dev/null || pip install ruff
 
       - name: Ruff lint
-        run: ruff check widgets scripts
+        run: ruff check widgets
 
       - name: Widget tests
         run: python -m unittest discover -s widgets -p 'test_*.py'

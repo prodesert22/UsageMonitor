@@ -45,8 +45,8 @@ Adds desktop widget support for KDE Plasma 6 and Waybar.
   JSON (`account_email`), and the KDE usage cards (falling back to the plan when
   no email is available, e.g. Claude).
 - Waybar wrapper script under `widgets/waybar/usage-monitor-waybar`.
-- Widget docs (`docs/widgets/`), a quality gate (`scripts/check_quality.py`), and
-  an Installation troubleshooting section.
+- Widget docs (`docs/widgets/`), a local quality gate, and an Installation
+  troubleshooting section.
 
 ### Changed
 - The CLI crate was split into smaller Rust modules (`cli`, `commands`,

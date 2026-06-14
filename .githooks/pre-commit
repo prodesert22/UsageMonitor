@@ -1,0 +1,48 @@
+#!/usr/bin/env sh
+set -eu
+
+ROOT="$(git rev-parse --show-toplevel)"
+PYTHON="${PYTHON:-python}"
+
+cd "$ROOT"
+
+run() {
+  echo "▶ $*"
+  "$@"
+}
+
+echo "▶ pre-commit: running Usage Monitor tests and lints"
+
+run cargo fmt -p usage-monitor-cli --check
+run cargo clippy --workspace --all-targets -- -D warnings
+run cargo test --workspace
+
+if command -v ruff >/dev/null 2>&1; then
+  RUFF=ruff
+elif [ -x ".venv/bin/ruff" ]; then
+  RUFF=.venv/bin/ruff
+else
+  echo "✘ ruff not found. Install dev dependencies first:" >&2
+  echo "  $PYTHON -m venv .venv" >&2
+  echo "  .venv/bin/pip install -r requirements-dev.txt" >&2
+  exit 1
+fi
+
+run "$RUFF" check widgets
+run "$PYTHON" -m unittest discover -s widgets -p 'test_*.py'
+
+if command -v qmllint >/dev/null 2>&1; then
+  QMLLINT=qmllint
+elif command -v qmllint-qt6 >/dev/null 2>&1; then
+  QMLLINT=qmllint-qt6
+else
+  QMLLINT=
+fi
+
+if [ -n "$QMLLINT" ]; then
+  for file in $(git ls-files 'widgets/kde/package/contents/**/*.qml'); do
+    run "$QMLLINT" "$file"
+  done
+else
+  echo "⊘ skip optional qmllint (not installed)"
+fi

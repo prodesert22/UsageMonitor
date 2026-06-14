@@ -1,30 +1,54 @@
 # Quality checks
 
-Use the local quality gate as the Rust equivalent of an ESLint-style workflow:
+Use the root pre-commit hook as the local quality gate:
 
 ```bash
-python scripts/check_quality.py
+.githooks/pre-commit
 ```
 
-It runs (skipping any tool that is not installed):
+It runs:
 
 - `cargo fmt -p usage-monitor-cli --check`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace`
-- `ruff check widgets scripts` — Python lint (config in [`ruff.toml`](../ruff.toml))
+- `ruff check widgets` — Python lint (config in [`ruff.toml`](../ruff.toml))
 - widget Python unit tests (`unittest discover -s widgets`)
-- `qmllint` for the KDE QML files
+- `qmllint` for the KDE QML files, if installed
 
 ## Dependencies
 
-The gate assumes these tools are on `$PATH`; missing ones are skipped:
+The gate assumes these tools are on `$PATH`:
 
 | Tool      | Used for         |
 |-----------|------------------|
 | `cargo`   | Rust build/lint/test |
 | `ruff`    | Python lint      |
 | `python`  | Widget tests     |
-| `qmllint` | QML validation   |
+| `qmllint` | Optional QML validation |
+
+## Pre-commit hook
+
+Install the repository hook path once to run the full quality gate before every
+commit:
+
+```bash
+git config core.hooksPath .githooks
+chmod +x .githooks/pre-commit
+```
+
+The hook runs:
+
+```bash
+cargo fmt -p usage-monitor-cli --check
+cargo clippy --workspace --all-targets -- -D warnings
+cargo test --workspace
+ruff check widgets
+python -m unittest discover -s widgets -p 'test_*.py'
+```
+
+If `qmllint` or `qmllint-qt6` is installed, the hook also validates the KDE QML
+files. `ruff` is required for the hook; install it with
+`pip install -r requirements-dev.txt` or inside `.venv`.
 
 ## Notes
 
