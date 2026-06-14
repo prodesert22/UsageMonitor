@@ -5,7 +5,20 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [0.5.1] — unreleased
+## [0.5.2] — unreleased
+
+Localizes the human-readable output's timestamps; `--json` stays raw UTC.
+
+### Changed
+- `Collected at` renders in the system-local timezone with the UTC offset
+  (e.g. `00:16 14/06/2026 (UTC-03:00)`).
+- Reset times are relative and local: today → `resets at HH:MM`, tomorrow →
+  `resets tomorrow at HH:MM`, otherwise `resets <Weekday> dd/mm at HH:MM`.
+- `--json` output is unchanged (raw UTC RFC 3339 timestamps).
+
+See [releases/v0.5.2.md](releases/v0.5.2.md).
+
+## [0.5.1]
 
 Adds the two protobuf-based providers, bringing the total to 28 native fetchers.
 

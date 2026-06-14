@@ -1,4 +1,5 @@
 use anyhow::Result;
+use chrono::Datelike;
 use clap::{Parser, Subcommand};
 use usage_monitor_core::config::{AppConfig, DEFAULT_ACCOUNT};
 use usage_monitor_core::provider::ProviderContext;
@@ -885,10 +886,7 @@ fn print_snapshot(snap: &UsageSnapshot) {
     let title = snapshot_title(snap);
     let width = snapshot_text_width(snap, &title);
     print_block_header(&title, width);
-    println!(
-        "Collected at: {}",
-        snap.collected_at.format("%Y-%m-%d %H:%M:%S UTC")
-    );
+    println!("Collected at: {}", fmt_local_datetime(snap.collected_at));
 
     if let Some(plan) = &snap.plan {
         println!("Plan: {}", plan.name);
@@ -990,12 +988,9 @@ fn block_header_lines(title: &str, width: usize) -> (String, String, String) {
 fn snapshot_text_width(snap: &UsageSnapshot, title: &str) -> usize {
     let mut width = title.chars().count();
     width = width.max(
-        format!(
-            "Collected at: {}",
-            snap.collected_at.format("%Y-%m-%d %H:%M:%S UTC")
-        )
-        .chars()
-        .count(),
+        format!("Collected at: {}", fmt_local_datetime(snap.collected_at))
+            .chars()
+            .count(),
     );
 
     if let Some(plan) = &snap.plan {
@@ -1071,8 +1066,45 @@ fn window_line_width(w: &RateWindow, label: &str) -> usize {
 
 fn reset_suffix(w: &RateWindow) -> String {
     w.resets_at
-        .map(|r| format!("  resets {}", r.format("%Y-%m-%d %H:%M UTC")))
+        .map(|r| format!("  {}", fmt_reset(r)))
         .unwrap_or_default()
+}
+
+/// Formats an instant in the system-local timezone, showing the local UTC
+/// offset, e.g. `00:16 14/06/2026 (UTC-03:00)`. Text is English; the JSON output
+/// keeps the raw UTC timestamp untouched.
+fn fmt_local_datetime(dt: chrono::DateTime<chrono::Utc>) -> String {
+    let local = dt.with_timezone(&chrono::Local);
+    format!(
+        "{} {} (UTC{})",
+        local.format("%H:%M"),
+        local.format("%d/%m/%Y"),
+        local.format("%:z")
+    )
+}
+
+/// Formats a reset instant relative to now, in the local timezone: today → just
+/// the time; tomorrow/yesterday → a relative word; otherwise the weekday plus
+/// date. Example: `resets tomorrow at 14:30`.
+fn fmt_reset(dt: chrono::DateTime<chrono::Utc>) -> String {
+    let local = dt.with_timezone(&chrono::Local);
+    let now = chrono::Local::now();
+    let days = (local.date_naive() - now.date_naive()).num_days();
+    let time = local.format("%H:%M");
+
+    // Include the year only when it differs from the current one.
+    let date = if local.year() == now.year() {
+        local.format("%d/%m").to_string()
+    } else {
+        local.format("%d/%m/%Y").to_string()
+    };
+
+    match days {
+        0 => format!("resets at {time}"),
+        1 => format!("resets tomorrow at {time}"),
+        -1 => format!("resets yesterday at {time}"),
+        _ => format!("resets {} {} at {time}", local.format("%A"), date),
+    }
 }
 
 const ANSI_GREEN: &str = "\x1b[32m";
@@ -1120,6 +1152,42 @@ fn print_window_with_label(w: &RateWindow, label: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_fmt_local_datetime_shows_local_offset() {
+        let s = fmt_local_datetime(chrono::Utc::now());
+        // `HH:MM dd/mm/yyyy (UTC±hh:mm)`
+        assert!(s.contains("(UTC"), "got: {s}");
+        assert!(s.contains('/'), "got: {s}");
+        assert!(s.contains(':'), "got: {s}");
+    }
+
+    #[test]
+    fn test_fmt_reset_today_is_time_only() {
+        // A few seconds from now is still "today" in local time.
+        let dt = chrono::Utc::now() + chrono::Duration::seconds(5);
+        let s = fmt_reset(dt);
+        assert!(s.starts_with("resets at "), "got: {s}");
+        assert!(!s.contains("tomorrow"), "got: {s}");
+    }
+
+    #[test]
+    fn test_fmt_reset_tomorrow() {
+        let dt = (chrono::Local::now() + chrono::Duration::days(1)).with_timezone(&chrono::Utc);
+        assert!(fmt_reset(dt).starts_with("resets tomorrow at "), "got: {}", fmt_reset(dt));
+    }
+
+    #[test]
+    fn test_fmt_reset_far_shows_weekday() {
+        let dt = (chrono::Local::now() + chrono::Duration::days(5)).with_timezone(&chrono::Utc);
+        let s = fmt_reset(dt);
+        // English weekday name, no "tomorrow"/"today".
+        let weekdays = [
+            "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday",
+        ];
+        assert!(weekdays.iter().any(|w| s.contains(w)), "got: {s}");
+        assert!(s.contains(" at "), "got: {s}");
+    }
 
     #[test]
     fn test_usage_color_thresholds() {
