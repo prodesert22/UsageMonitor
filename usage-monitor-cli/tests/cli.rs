@@ -109,6 +109,11 @@ impl TestEnv {
             .env_remove("CODEXBAR_BEDROCK_BUDGET")
             .env_remove("GROK_COOKIE")
             .env_remove("GROK_TOKEN")
+            .env_remove("GROK_ACCESS_TOKEN")
+            .env_remove("WINDSURF_SESSION_TOKEN")
+            .env_remove("WINDSURF_AUTH1_TOKEN")
+            .env_remove("WINDSURF_ACCOUNT_ID")
+            .env_remove("WINDSURF_PRIMARY_ORG_ID")
             .env_remove("GROQ_API_KEY")
             .env_remove("GROQ_TOKEN")
             .env_remove("LLM_PROXY_API_KEY")
@@ -174,7 +179,7 @@ fn test_list_shows_all_providers_auto_disabled_without_credentials() {
         assert!(text.contains(id), "missing {} in: {}", id, text);
     }
     // Fresh HOME has no credentials → everything auto-disabled.
-    assert_eq!(text.matches("disabled (auto)").count(), 26, "got: {}", text);
+    assert_eq!(text.matches("disabled (auto)").count(), 28, "got: {}", text);
 }
 
 #[test]
@@ -188,7 +193,7 @@ fn test_list_auto_enables_detected_credentials() {
         "got: {}",
         text
     );
-    assert_eq!(text.matches("disabled (auto)").count(), 25, "got: {}", text);
+    assert_eq!(text.matches("disabled (auto)").count(), 27, "got: {}", text);
 }
 
 #[test]

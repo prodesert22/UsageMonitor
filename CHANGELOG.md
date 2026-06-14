@@ -5,7 +5,22 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [0.5.0] — unreleased
+## [0.5.1] — unreleased
+
+Adds the two protobuf-based providers, bringing the total to 28 native fetchers.
+
+### Added
+- `grok` — credit usage via the `GetGrokCreditsConfig` gRPC-Web RPC (the
+  protobuf response is generically scanned). Bearer-token or cookie auth.
+- `windsurf` — daily/weekly quota via the `GetPlanStatus` Connect RPC (raw
+  protobuf, exact field numbers). Devin-session-token auth.
+- `provider::proto` — a minimal, bounds-checked protobuf wire reader/encoder
+  shared by the protobuf providers.
+- Per-provider docs for `grok` and `windsurf`.
+
+See [releases/v0.5.1.md](releases/v0.5.1.md).
+
+## [0.5.0]
 
 Adds 13 new native Linux fetchers ported from the CodexBar macOS app, bringing
 the total to 26 providers with real usage fetching.

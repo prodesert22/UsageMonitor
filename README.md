@@ -54,6 +54,8 @@ Native Linux fetchers currently exist for:
 | [`mistral`](docs/providers/mistral.md) | Mistral API monthly spend | Browser cookie, `MISTRAL_COOKIE` |
 | [`ollama`](docs/providers/ollama.md) | Ollama cloud session/weekly usage | Browser cookie, `OLLAMA_COOKIE` |
 | [`zai`](docs/providers/zai.md) | z.ai coding-plan quota | `Z_AI_API_KEY` |
+| [`grok`](docs/providers/grok.md) | Grok credit usage (gRPC-Web) | Bearer token or cookie, `GROK_TOKEN`/`GROK_COOKIE` |
+| [`windsurf`](docs/providers/windsurf.md) | Windsurf daily/weekly quota (Connect proto) | Devin session token, `WINDSURF_SESSION_TOKEN` |
 | [`opencode-go`](docs/providers/opencode-go.md) | OpenCode Go workspaces      | Manual session cookie |
 
 Auth and extraction were ported from the CodexBar macOS app. Browser-cookie

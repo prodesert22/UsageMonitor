@@ -33,6 +33,8 @@ troubleshooting. For the general CLI and the multi-account model, see the
 | [`mistral`](mistral.md) | Mistral API monthly spend | Browser session cookie | When `MISTRAL_COOKIE` is set |
 | [`ollama`](ollama.md) | Ollama cloud session/weekly usage | Browser session cookie | When `OLLAMA_COOKIE` is set |
 | [`zai`](zai.md) | z.ai coding-plan quota | API key | When `Z_AI_API_KEY` is set |
+| [`grok`](grok.md) | Grok credit usage (gRPC-Web) | Bearer token or browser cookie | When `GROK_TOKEN`/`GROK_COOKIE` is set |
+| [`windsurf`](windsurf.md) | Windsurf daily/weekly quota (Connect proto) | Devin session token | When `WINDSURF_SESSION_TOKEN` is set |
 | [`opencode-go`](opencode-go.md) | OpenCode Go workspaces | Manual session cookie | Never (manual setup) |
 
 Every provider above ships a real Linux fetcher. Auth and extraction were ported

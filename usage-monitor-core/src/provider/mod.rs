@@ -10,6 +10,7 @@ pub mod deepseek;
 pub mod devin;
 pub mod elevenlabs;
 pub mod gemini;
+pub mod grok;
 pub mod groq;
 pub mod kimi;
 pub mod kimik2;
@@ -22,8 +23,10 @@ pub mod openai;
 pub mod opencode_go;
 pub mod openrouter;
 pub mod perplexity;
+pub mod proto;
 pub mod registry;
 pub mod venice;
+pub mod windsurf;
 pub mod zai;
 
 use async_trait::async_trait;

@@ -47,6 +47,7 @@ impl ProviderRegistry {
         reg.register(Box::new(super::devin::DevinProvider::new()));
         reg.register(Box::new(super::elevenlabs::ElevenLabsProvider::new()));
         reg.register(Box::new(super::gemini::GeminiProvider::new()));
+        reg.register(Box::new(super::grok::GrokProvider::new()));
         reg.register(Box::new(super::groq::GroqProvider::new()));
         reg.register(Box::new(super::kimi::KimiProvider::new()));
         reg.register(Box::new(super::kimik2::KimiK2Provider::new()));
@@ -60,6 +61,7 @@ impl ProviderRegistry {
         reg.register(Box::new(super::openrouter::OpenRouterProvider::new()));
         reg.register(Box::new(super::perplexity::PerplexityProvider::new()));
         reg.register(Box::new(super::venice::VeniceProvider::new()));
+        reg.register(Box::new(super::windsurf::WindsurfProvider::new()));
         reg.register(Box::new(super::zai::ZaiProvider::new()));
         reg
     }
