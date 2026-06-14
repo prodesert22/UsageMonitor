@@ -5,7 +5,44 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [0.5.2] — unreleased
+## [0.6.0] — unreleased
+
+Adds desktop widget support for KDE Plasma 6 and Waybar.
+
+### Added
+- `usage-monitor-cli widget waybar` emits Waybar-compatible single-line JSON, and
+  `usage-monitor-cli widget kde` emits the same payload (with `--pretty`) for the
+  KDE helper.
+- KDE Plasma 6 plasmoid under `widgets/kde/package`, a faithful port of the
+  `codexbar-kde` plasmoid adapted to Usage Monitor: usage popup with one card per
+  provider/account (Session/Weekly/Monthly bars, reset times, stale/error states),
+  a "keep popup open" pin button, and a native KDE config window split into
+  **General**, **Providers**, and **Order** pages plus the native **About** page.
+- KDE account management: add/remove named accounts per provider with a form
+  shaped to each provider's auth type (API key / token / cookie / OAuth
+  credentials path), plus add/remove opencode-go workspaces.
+- Account emails now appear for each account: Codex decodes its email from the
+  OAuth `id_token`, shown in the CLI text output (`Account:` line), the widget
+  JSON (`account_email`), and the KDE usage cards (falling back to the plan when
+  no email is available, e.g. Claude).
+- Waybar wrapper script under `widgets/waybar/usage-monitor-waybar`.
+- Widget docs (`docs/widgets/`), a quality gate (`scripts/check_quality.py`), and
+  an Installation troubleshooting section.
+
+### Changed
+- The CLI crate was split into smaller Rust modules (`cli`, `commands`,
+  `dynamic`, `fetch`, `output`, `widget`).
+- The CLI now identifies itself as `usage-monitor-cli` consistently (version
+  string and help output).
+- KDE settings moved out of the popup into the native KDE config dialog, with
+  working Apply/OK/Cancel for display preferences; provider toggles, accounts,
+  workspaces, and cache clear apply immediately.
+- The plasmoid About page is populated from `metadata.json` and its bug-report
+  link points to the project issues.
+
+See [releases/v0.6.0.md](releases/v0.6.0.md).
+
+## [0.5.2]
 
 Localizes the human-readable output's timestamps; `--json` stays raw UTC.
 

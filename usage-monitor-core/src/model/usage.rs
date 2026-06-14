@@ -96,6 +96,11 @@ pub struct UsageSnapshot {
     /// Human-friendly account label, when one is configured.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub account_label: Option<String>,
+    /// Account email/identity extracted from the provider's credentials, when
+    /// available (e.g. the Codex OAuth id_token). Independent of `account_label`,
+    /// which the registry overwrites with the configured label.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_email: Option<String>,
     pub collected_at: DateTime<Utc>,
     pub primary_rate_window: Option<RateWindow>,
     pub secondary_rate_window: Option<RateWindow>,
@@ -112,6 +117,7 @@ impl UsageSnapshot {
             provider_id: provider_id.into(),
             account_id: None,
             account_label: None,
+            account_email: None,
             collected_at: Utc::now(),
             primary_rate_window: None,
             secondary_rate_window: None,
@@ -214,6 +220,7 @@ mod tests {
             provider_id: "test".into(),
             account_id: None,
             account_label: None,
+            account_email: None,
             collected_at: Utc::now(),
             primary_rate_window: Some(RateWindow::new(50, 100, "test", 60)),
             secondary_rate_window: None,

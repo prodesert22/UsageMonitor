@@ -1,0 +1,2 @@
+# Runtime dependencies: none (stdlib only)
+# Python 3.10+ required for typing features

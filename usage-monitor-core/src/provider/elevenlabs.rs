@@ -207,7 +207,7 @@ impl ElevenLabsProvider {
             .map(str::trim)
             .filter(|s| !s.is_empty());
         match (tier, usage.status.as_deref().filter(|s| !s.is_empty())) {
-            (Some(tier), Some(status)) if status.to_ascii_lowercase() != "active" => Some(format!(
+            (Some(tier), Some(status)) if !status.eq_ignore_ascii_case("active") => Some(format!(
                 "{} · {}",
                 tier.replace('_', " ")
                     .split_whitespace()

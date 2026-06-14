@@ -10,6 +10,9 @@ as a Rust library + CLI for monitoring AI service usage from the terminal.
   registry, fetch flow, configuration, and error model.
 - [Configuration](configuration.md) — the `config.toml` format, accounts,
   enable/disable resolution, and environment variables.
+- [Desktop widgets](./widgets/README.md) — KDE Plasma 6 and Waybar integration.
+- [Quality checks](quality.md) — rustfmt, Clippy, QML/Python/widget checks, and
+  file-size limits.
 - [Adding a provider](adding-a-provider.md) — step-by-step guide to porting a new
   provider, with conventions and a checklist.
 - [Credits & license](credits.md) — attribution to CodexBar and licensing.

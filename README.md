@@ -17,6 +17,8 @@ Full docs live in [`docs/`](docs/README.md):
 - [Architecture](docs/architecture.md) — crates, data model, provider trait,
   registry, fetch flow.
 - [Configuration](docs/configuration.md) — `config.toml`, accounts, env vars.
+- [Desktop widgets](docs/widgets/README.md) — KDE Plasma 6 and Waybar integration.
+- [Quality checks](docs/quality.md) — rustfmt, Clippy, QML/widget tests, size limits.
 - [Adding a provider](docs/adding-a-provider.md) — porting guide + checklist.
 - [Provider index](docs/providers/README.md) — every provider and its auth.
 - [Credits & license](docs/credits.md).
@@ -83,6 +85,8 @@ Per-provider setup, config keys, and troubleshooting live in
 |---------|-------------|
 | `list` | List providers with their resolved state (`enabled`, `disabled`, or `(auto)` from credential detection) |
 | `fetch [provider] [--account <name>]` | Fetch usage. Without a provider, fetches all enabled providers concurrently; with one, fetches it (refused if explicitly disabled). `--account` restricts to a single account |
+| `widget waybar [provider] [--account <name>]` | Emit single-line JSON for a Waybar custom module |
+| `widget kde [provider] [--account <name>] [--pretty]` | Emit the JSON payload consumed by the KDE Plasma widget helper |
 | `enable <provider>` | Force a provider on, regardless of detection |
 | `disable <provider>` | Force a provider off; it is skipped by `fetch` and direct fetches are refused |
 | `auto <provider>` | Remove the explicit toggle and return to credential auto-detection |
@@ -166,6 +170,10 @@ usage-monitor-cli fetch claude --account work
 
 # Machine-readable output
 usage-monitor-cli fetch claude --json
+
+# Desktop widget payloads
+usage-monitor-cli widget waybar
+usage-monitor-cli widget kde --pretty
 ```
 
 The config file groups settings per provider, then per account:
@@ -184,6 +192,7 @@ credentials_path = "~/work/.claude/.credentials.json"
 ```
 usage-monitor-core/     Core library (models, providers, registry, config)
 usage-monitor-cli/      Command-line interface
+widgets/                KDE Plasma and Waybar integrations
 docs/                   Guides + per-provider specifications
 releases/               Per-version release notes
 ```
@@ -199,6 +208,12 @@ cargo test
 # Specific module
 cargo test -p usage-monitor-core -- model::usage
 cargo test -p usage-monitor-core -- provider::anthropic
+
+# Desktop widget helpers
+python -m unittest discover -s widgets -p 'test_*.py'
+
+# Local quality gate (fmt, clippy, ruff, widget tests, qmllint, size checks)
+python scripts/check_quality.py
 ```
 
 ## Credits

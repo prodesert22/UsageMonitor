@@ -1,6 +1,10 @@
 # Rust
 target/
 
+# Python test/runtime cache
+__pycache__/
+*.py[cod]
+
 # IDE
 .vscode/
 .idea/

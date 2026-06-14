@@ -1,0 +1,6 @@
+# Clippy tuning for the CLI/widget work. Run with:
+# cargo clippy --workspace --all-targets -- -D warnings
+too-many-lines-threshold = 90
+cognitive-complexity-threshold = 25
+type-complexity-threshold = 250
+too-many-arguments-threshold = 7

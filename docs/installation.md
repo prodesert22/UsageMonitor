@@ -64,6 +64,27 @@ usage-monitor-cli fetch deepseek
 Configuration is stored at `$XDG_CONFIG_HOME/usage-monitor/config.toml`
 (or `~/.config/usage-monitor/config.toml`). See [Configuration](configuration.md).
 
+## Troubleshooting
+
+- **`usage-monitor-cli: command not found`** — `~/.cargo/bin` is not on your
+  `PATH`. Add `export PATH="$HOME/.cargo/bin:$PATH"` to your shell profile, or run
+  the binary directly from `./target/release/usage-monitor-cli`.
+- **Build fails on `openssl-sys` / `pkg-config`** — install the TLS prerequisites
+  from the [Prerequisites](#prerequisites) section (`libssl-dev` / `openssl-devel`
+  / `openssl` plus `pkg-config`). On systems without OpenSSL headers you can force
+  the bundled TLS backend by building with the `vendored-openssl` toolchain, or
+  install the distro package above.
+- **`error: package requires Rust 1.85 or newer`** — update your toolchain with
+  `rustup update stable` (the workspace uses edition 2024).
+- **`cannot resolve config path (HOME not set)`** — the CLI writes config to
+  `$XDG_CONFIG_HOME/usage-monitor/config.toml` (falling back to
+  `~/.config/usage-monitor/config.toml`); make sure `HOME` or `XDG_CONFIG_HOME`
+  is set in the environment that runs the binary.
+- **Nothing is enabled / `fetch` prints "No enabled providers"** — providers stay
+  auto-disabled until credentials are detected or you configure an account. See
+  [Configuration](configuration.md) and the per-provider docs under
+  [`docs/providers/`](providers/README.md).
+
 ## Updating
 
 ```bash

@@ -3,155 +3,8 @@
 //! Each test runs the compiled binary with an isolated HOME/XDG_CONFIG_HOME
 //! so the real user config and credentials are never touched.
 
-use std::path::PathBuf;
-use std::process::{Command, Output};
-
-struct TestEnv {
-    home: PathBuf,
-}
-
-impl TestEnv {
-    fn new(name: &str) -> Self {
-        let home = std::env::temp_dir().join(format!(
-            "usage-monitor-cli-test-{}-{}",
-            name,
-            std::process::id()
-        ));
-        std::fs::create_dir_all(&home).unwrap();
-        Self { home }
-    }
-
-    fn run(&self, args: &[&str]) -> Output {
-        Command::new(env!("CARGO_BIN_EXE_usage-monitor-cli"))
-            .args(args)
-            .env("HOME", &self.home)
-            .env("XDG_CONFIG_HOME", self.home.join(".config"))
-            .env_remove("ANTHROPIC_API_KEY")
-            .env_remove("OPENAI_API_KEY")
-            .env_remove("CODEX_HOME")
-            .env_remove("AZURE_OPENAI_API_KEY")
-            .env_remove("AZURE_OPENAI_ENDPOINT")
-            .env_remove("AZURE_OPENAI_DEPLOYMENT_NAME")
-            .env_remove("CURSOR_COOKIE")
-            .env_remove("CURSOR_SESSION_TOKEN")
-            .env_remove("OPENCODE_COOKIE")
-            .env_remove("OPENCODE_SESSION_TOKEN")
-            .env_remove("ALIBABA_CODING_PLAN_API_KEY")
-            .env_remove("ALIBABA_CODING_PLAN_COOKIE")
-            .env_remove("ALIBABA_TOKEN_PLAN_COOKIE")
-            .env_remove("FACTORY_COOKIE")
-            .env_remove("FACTORY_TOKEN")
-            .env_remove("GEMINI_CREDENTIALS")
-            .env_remove("GOOGLE_APPLICATION_CREDENTIALS")
-            .env_remove("GOOGLE_CLOUD_PROJECT")
-            .env_remove("GITHUB_TOKEN")
-            .env_remove("COPILOT_TOKEN")
-            .env_remove("DEVIN_TOKEN")
-            .env_remove("DEVIN_COOKIE")
-            .env_remove("Z_AI_API_KEY")
-            .env_remove("MINIMAX_API_KEY")
-            .env_remove("MINIMAX_TOKEN")
-            .env_remove("MINIMAX_COOKIE")
-            .env_remove("MANUS_SESSION_TOKEN")
-            .env_remove("MANUS_COOKIE")
-            .env_remove("KIMI_AUTH_TOKEN")
-            .env_remove("KIMI_COOKIE")
-            .env_remove("KILO_API_KEY")
-            .env_remove("AUGMENT_TOKEN")
-            .env_remove("AUGMENT_COOKIE")
-            .env_remove("KIMI_K2_API_KEY")
-            .env_remove("KIMI_API_KEY")
-            .env_remove("MOONSHOT_API_KEY")
-            .env_remove("MOONSHOT_KEY")
-            .env_remove("AMP_ACCESS_TOKEN")
-            .env_remove("AMP_API_KEY")
-            .env_remove("AMP_COOKIE")
-            .env_remove("T3CHAT_COOKIE")
-            .env_remove("T3CHAT_SESSION_TOKEN")
-            .env_remove("OLLAMA_API_KEY")
-            .env_remove("OLLAMA_COOKIE")
-            .env_remove("SYNTHETIC_API_KEY")
-            .env_remove("WARP_API_KEY")
-            .env_remove("WARP_TOKEN")
-            .env_remove("OPENROUTER_API_KEY")
-            .env_remove("ELEVENLABS_API_KEY")
-            .env_remove("XI_API_KEY")
-            .env_remove("WINDSURF_TOKEN")
-            .env_remove("WINDSURF_COOKIE")
-            .env_remove("PERPLEXITY_SESSION_TOKEN")
-            .env_remove("PERPLEXITY_COOKIE")
-            .env_remove("MIMO_COOKIE")
-            .env_remove("XIAOMI_MIMO_COOKIE")
-            .env_remove("ARK_API_KEY")
-            .env_remove("VOLCENGINE_API_KEY")
-            .env_remove("DOUBAO_API_KEY")
-            .env_remove("ABACUS_COOKIE")
-            .env_remove("ABACUS_TOKEN")
-            .env_remove("MISTRAL_COOKIE")
-            .env_remove("MISTRAL_SESSION")
-            .env_remove("DEEPSEEK_API_KEY")
-            .env_remove("DEEPSEEK_KEY")
-            .env_remove("CODEBUFF_API_KEY")
-            .env_remove("CROF_API_KEY")
-            .env_remove("CROFAI_API_KEY")
-            .env_remove("VENICE_API_KEY")
-            .env_remove("VENICE_KEY")
-            .env_remove("COMMANDCODE_COOKIE")
-            .env_remove("COMMAND_CODE_COOKIE")
-            .env_remove("STEPFUN_USERNAME")
-            .env_remove("STEPFUN_PASSWORD")
-            .env_remove("STEPFUN_OASIS_TOKEN")
-            .env_remove("AWS_ACCESS_KEY_ID")
-            .env_remove("AWS_SECRET_ACCESS_KEY")
-            .env_remove("AWS_SESSION_TOKEN")
-            .env_remove("AWS_REGION")
-            .env_remove("AWS_DEFAULT_REGION")
-            .env_remove("CODEXBAR_BEDROCK_BUDGET")
-            .env_remove("GROK_COOKIE")
-            .env_remove("GROK_TOKEN")
-            .env_remove("GROK_ACCESS_TOKEN")
-            .env_remove("WINDSURF_SESSION_TOKEN")
-            .env_remove("WINDSURF_AUTH1_TOKEN")
-            .env_remove("WINDSURF_ACCOUNT_ID")
-            .env_remove("WINDSURF_PRIMARY_ORG_ID")
-            .env_remove("GROQ_API_KEY")
-            .env_remove("GROQ_TOKEN")
-            .env_remove("LLM_PROXY_API_KEY")
-            .env_remove("LLM_PROXY_BASE_URL")
-            .env_remove("DEEPGRAM_API_KEY")
-            .env_remove("DEEPGRAM_PROJECT_ID")
-            .output()
-            .expect("run binary")
-    }
-
-    fn config_path(&self) -> PathBuf {
-        self.home.join(".config/usage-monitor/config.toml")
-    }
-
-    fn write_claude_credentials(&self) {
-        let dir = self.home.join(".claude");
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(
-            dir.join(".credentials.json"),
-            r#"{"claudeAiOauth":{"accessToken":"at","refreshToken":"rt","expiresAt":99999999999999.0}}"#,
-        )
-        .unwrap();
-    }
-}
-
-impl Drop for TestEnv {
-    fn drop(&mut self) {
-        std::fs::remove_dir_all(&self.home).ok();
-    }
-}
-
-fn stdout(out: &Output) -> String {
-    String::from_utf8_lossy(&out.stdout).to_string()
-}
-
-fn stderr(out: &Output) -> String {
-    String::from_utf8_lossy(&out.stderr).to_string()
-}
+mod support;
+use support::{TestEnv, stderr, stdout};
 
 #[test]
 fn test_list_shows_all_providers_auto_disabled_without_credentials() {
@@ -261,6 +114,26 @@ fn test_fetch_all_without_enabled_providers() {
 }
 
 #[test]
+fn test_widget_waybar_without_enabled_providers_outputs_single_json_object() {
+    let env = TestEnv::new("widget-empty");
+    let out = env.run(&["widget", "waybar"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+
+    let text = stdout(&out);
+    assert_eq!(text.lines().count(), 1, "got: {text:?}");
+    let payload: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
+    assert_eq!(payload["text"], "—");
+    assert_eq!(payload["class"], "stale");
+    assert_eq!(payload["percentage"], 0);
+    assert!(
+        payload["tooltip"]
+            .as_str()
+            .unwrap()
+            .contains("No enabled providers")
+    );
+}
+
+#[test]
 fn test_provider_config_set_show_unset() {
     let env = TestEnv::new("config-set");
     let out = env.run(&["opencode-go", "set", "token", "session=secret-cookie-value"]);
@@ -341,9 +214,18 @@ fn test_provider_help_variants() {
         vec!["deepseek"],
     ] {
         let out = env.run(&args);
-        assert!(out.status.success(), "args {:?} stderr: {}", args, stderr(&out));
+        assert!(
+            out.status.success(),
+            "args {:?} stderr: {}",
+            args,
+            stderr(&out)
+        );
         let text = stdout(&out);
-        assert!(text.contains("Usage: usage-monitor-cli deepseek"), "args {:?}", args);
+        assert!(
+            text.contains("Usage: usage-monitor-cli deepseek"),
+            "args {:?}",
+            args
+        );
         assert!(text.contains("account list"), "args {:?}", args);
     }
 }
@@ -358,7 +240,12 @@ fn test_provider_account_help_variants() {
         vec!["deepseek", "account"],
     ] {
         let out = env.run(&args);
-        assert!(out.status.success(), "args {:?} stderr: {}", args, stderr(&out));
+        assert!(
+            out.status.success(),
+            "args {:?} stderr: {}",
+            args,
+            stderr(&out)
+        );
         let text = stdout(&out);
         assert!(
             text.contains("account <command>") || text.contains("account command"),
@@ -381,7 +268,11 @@ fn test_help_flag_never_creates_account() {
     assert!(out.status.success());
     // No config written / no "-h" account.
     if let Ok(raw) = std::fs::read_to_string(env.config_path()) {
-        assert!(!raw.contains("accounts.-h"), "junk account created: {}", raw);
+        assert!(
+            !raw.contains("accounts.-h"),
+            "junk account created: {}",
+            raw
+        );
     }
     // And `account list` shows nothing was added.
     let out = env.run(&["deepseek", "account", "list"]);

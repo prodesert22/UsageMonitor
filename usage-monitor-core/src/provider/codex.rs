@@ -50,6 +50,45 @@ pub struct CodexOAuthCredentials {
     pub access_token: String,
     pub refresh_token: Option<String>,
     pub account_id: Option<String>,
+    /// Account email decoded from the OAuth `id_token`, when present.
+    pub email: Option<String>,
+}
+
+/// Decodes the `email` claim from a JWT (the Codex `id_token`) without verifying
+/// the signature — we only need the identity for display.
+fn jwt_email(id_token: &str) -> Option<String> {
+    let payload = id_token.split('.').nth(1)?;
+    let bytes = base64url_decode(payload)?;
+    let claims: serde_json::Value = serde_json::from_slice(&bytes).ok()?;
+    claims
+        .get("email")
+        .and_then(|v| v.as_str())
+        .map(str::to_string)
+}
+
+/// Minimal base64url decoder (no padding) for JWT payloads.
+fn base64url_decode(input: &str) -> Option<Vec<u8>> {
+    let mut out = Vec::with_capacity(input.len() * 3 / 4);
+    let mut buffer = 0u32;
+    let mut bits = 0u32;
+    for byte in input.bytes() {
+        let value = match byte {
+            b'A'..=b'Z' => byte - b'A',
+            b'a'..=b'z' => byte - b'a' + 26,
+            b'0'..=b'9' => byte - b'0' + 52,
+            b'-' => 62,
+            b'_' => 63,
+            b'=' => continue,
+            _ => return None,
+        } as u32;
+        buffer = (buffer << 6) | value;
+        bits += 6;
+        if bits >= 8 {
+            bits -= 8;
+            out.push((buffer >> bits) as u8);
+        }
+    }
+    Some(out)
 }
 
 impl CodexOAuthCredentials {
@@ -94,6 +133,7 @@ impl CodexOAuthCredentials {
             access_token,
             refresh_token: tokens.refresh_token,
             account_id: tokens.account_id,
+            email: tokens.id_token.as_deref().and_then(jwt_email),
         })
     }
 }
@@ -260,6 +300,11 @@ impl CodexProvider {
             access_token: token.access_token,
             refresh_token: token.refresh_token.or_else(|| creds.refresh_token.clone()),
             account_id: creds.account_id.clone(),
+            email: token
+                .id_token
+                .as_deref()
+                .and_then(jwt_email)
+                .or_else(|| creds.email.clone()),
         };
 
         if let Some(path) = persist_path
@@ -475,6 +520,7 @@ impl UsageProvider for CodexProvider {
                     access_token: token.clone(),
                     refresh_token: None,
                     account_id: ctx.config.get("account_id").cloned(),
+                    email: None,
                 },
                 None,
             )
@@ -485,7 +531,11 @@ impl UsageProvider for CodexProvider {
 
         // auth.json has no expiry field, so try the request and refresh on rejection.
         match Self::fetch_wham_usage(self.api_base(), &client, &creds).await {
-            Ok(usage) => Ok(Self::snapshot_from_usage(&usage)),
+            Ok(usage) => {
+                let mut snapshot = Self::snapshot_from_usage(&usage);
+                snapshot.account_email = creds.email.clone();
+                Ok(snapshot)
+            }
             Err(SpendPanelError::AuthFailed(_, _)) if creds.refresh_token.is_some() => {
                 let refreshed = Self::refresh_token(
                     self.token_base(),
@@ -495,7 +545,9 @@ impl UsageProvider for CodexProvider {
                 )
                 .await?;
                 let usage = Self::fetch_wham_usage(self.api_base(), &client, &refreshed).await?;
-                Ok(Self::snapshot_from_usage(&usage))
+                let mut snapshot = Self::snapshot_from_usage(&usage);
+                snapshot.account_email = refreshed.email.clone();
+                Ok(snapshot)
             }
             Err(e) => Err(e),
         }
@@ -645,6 +697,7 @@ mod tests {
             access_token: "at-test".into(),
             refresh_token: None,
             account_id: Some("acc-123".into()),
+            email: None,
         };
         let usage = CodexProvider::fetch_wham_usage(&server.uri(), &client, &creds)
             .await
@@ -669,9 +722,32 @@ mod tests {
             access_token: "bad".into(),
             refresh_token: None,
             account_id: None,
+            email: None,
         };
         let result = CodexProvider::fetch_wham_usage(&server.uri(), &client, &creds).await;
         assert!(matches!(result, Err(SpendPanelError::AuthFailed(_, _))));
+    }
+
+    #[test]
+    fn test_jwt_email_decodes_claim() {
+        let token = "header.eyJlbWFpbCI6ICJ0ZXN0QGV4YW1wbGUuY29tIiwgIm5hbWUiOiAiVGVzdCJ9.sig";
+        assert_eq!(jwt_email(token).as_deref(), Some("test@example.com"));
+        assert_eq!(jwt_email("not-a-jwt"), None);
+        assert_eq!(jwt_email("a.b.c"), None);
+    }
+
+    #[test]
+    fn test_parse_sets_email_from_id_token() {
+        let auth = serde_json::json!({
+            "tokens": {
+                "id_token": "header.eyJlbWFpbCI6ICJ0ZXN0QGV4YW1wbGUuY29tIiwgIm5hbWUiOiAiVGVzdCJ9.sig",
+                "access_token": "at-test",
+                "account_id": "acc-1"
+            }
+        })
+        .to_string();
+        let creds = CodexOAuthCredentials::parse(&auth).unwrap();
+        assert_eq!(creds.email.as_deref(), Some("test@example.com"));
     }
 
     #[test]
@@ -697,6 +773,7 @@ mod tests {
             access_token: "at".into(),
             refresh_token: None,
             account_id: None,
+            email: None,
         };
         let result = CodexProvider::fetch_wham_usage(&server.uri(), &client, &creds).await;
         assert!(matches!(
