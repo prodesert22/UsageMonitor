@@ -347,7 +347,7 @@ impl UsageProvider for AnthropicProvider {
                     })
                 })
                 .collect();
-            daily.sort_by(|a, b| a.date.cmp(&b.date));
+            daily.sort_by_key(|a| a.date);
 
             let total: f64 = daily.iter().map(|d| d.cost).sum();
             snapshot.cost = Some(CostSnapshot {
