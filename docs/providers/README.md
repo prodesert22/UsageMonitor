@@ -38,7 +38,7 @@ troubleshooting. For the general CLI and the multi-account model, see the
 | [`opencode-go`](opencode-go.md) | OpenCode Go workspaces | Manual session cookie | Never (manual setup) |
 
 Every provider above ships a real Linux fetcher. Auth and extraction were ported
-from the [CodexBar](https://github.com/) macOS implementation; browser-cookie
+from the [CodexBar](https://github.com/steipete/CodexBar) macOS implementation; browser-cookie
 providers take the cookie/token from config instead of auto-importing it from a
 browser (which is macOS-specific).
 

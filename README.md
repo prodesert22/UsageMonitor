@@ -9,6 +9,18 @@ depending on external servers.
 A Linux port of [CodexBar](https://github.com/steipete/CodexBar) by
 [Peter Steinberger](https://github.com/steipete), reimplemented in Rust.
 
+## Documentation
+
+Full docs live in [`docs/`](docs/README.md):
+
+- [Installation](docs/installation.md) — prerequisites, build, install, PATH.
+- [Architecture](docs/architecture.md) — crates, data model, provider trait,
+  registry, fetch flow.
+- [Configuration](docs/configuration.md) — `config.toml`, accounts, env vars.
+- [Adding a provider](docs/adding-a-provider.md) — porting guide + checklist.
+- [Provider index](docs/providers/README.md) — every provider and its auth.
+- [Credits & license](docs/credits.md).
+
 ## Build
 
 ```bash
@@ -170,10 +182,13 @@ credentials_path = "~/work/.claude/.credentials.json"
 ## Structure
 
 ```
-usage-monitor-core/     Core library (models, providers, fetching)
+usage-monitor-core/     Core library (models, providers, registry, config)
 usage-monitor-cli/      Command-line interface
-docs/                   Provider extraction specifications
+docs/                   Guides + per-provider specifications
+releases/               Per-version release notes
 ```
+
+See [docs/architecture.md](docs/architecture.md) for a detailed breakdown.
 
 ## Tests
 
@@ -190,8 +205,9 @@ cargo test -p usage-monitor-core -- provider::anthropic
 
 Concept, provider research, and original macOS implementation:
 [steipete/CodexBar](https://github.com/steipete/CodexBar) (MIT). This project
-ports the idea to Linux as a Rust library + CLI.
+ports the idea to Linux as a Rust library + CLI. See
+[docs/credits.md](docs/credits.md).
 
 ## License
 
-MIT
+MIT — see [LICENSE](LICENSE).
