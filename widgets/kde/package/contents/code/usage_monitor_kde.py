@@ -15,7 +15,6 @@ import os
 import re
 import subprocess
 import sys
-import time
 from collections.abc import Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -107,11 +106,14 @@ PROVIDER_AUTH: dict[str, dict[str, Any]] = {
         "openai", "anthropic", "openrouter", "groq", "deepseek", "kimik2",
         "minimax", "moonshot", "venice", "zai", "elevenlabs",
     )},
-    "deepgram": {"kind": "api_key", "fields": _API_KEY + [_field("project_id", "Project ID")]},
-    "llmproxy": {"kind": "api_key", "fields": _API_KEY + [_field("base_url", "Base URL", placeholder="https://…")]},
+    "deepgram": {"kind": "api_key", "fields": [*_API_KEY, _field("project_id", "Project ID")]},
+    "llmproxy": {
+        "kind": "api_key",
+        "fields": [*_API_KEY, _field("base_url", "Base URL", placeholder="https://…")],
+    },
     # token providers
     **{p: {"kind": "token", "fields": _TOKEN} for p in ("grok", "kimi", "copilot", "windsurf")},
-    "devin": {"kind": "token", "fields": _TOKEN + [_field("org", "Organization")]},
+    "devin": {"kind": "token", "fields": [*_TOKEN, _field("org", "Organization")]},
     # cookie providers
     **{p: {"kind": "cookie", "fields": _COOKIE} for p in ("abacus", "mistral", "ollama", "cursor", "perplexity")},
     # OAuth / CLI providers (account added via terminal login + credentials path)
@@ -309,7 +311,7 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
     slots = ["primary", "secondary", "tertiary"]
     # usage-monitor already emits windows in primary/secondary/tertiary order;
     # map positionally so the QML's fixed Session/Weekly/Monthly labels line up.
-    for slot, window in zip(slots, [w for w in windows if isinstance(w, dict)]):
+    for slot, window in zip(slots, [w for w in windows if isinstance(w, dict)], strict=False):
         usage[slot] = {
             "usedPercent": _percent(window.get("percentage")) or 0.0,
             "resetsAt": None,
@@ -635,7 +637,7 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
         accounts_iter = pool.map(parse_accounts, ids)
         version_future = pool.submit(cli_version)
         workspaces_future = pool.submit(list_workspaces) if "opencode-go" in ids else None
-        accounts_by = dict(zip(ids, accounts_iter))
+        accounts_by = dict(zip(ids, accounts_iter, strict=False))
         cli_ver = version_future.result()
         workspaces = workspaces_future.result() if workspaces_future else []
 
@@ -681,7 +683,7 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
         "showAccountEmail": sf.get("showAccountEmail", "true") != "false",
         "providerOrder": sf.get("providerOrder", "[]"),
         "plasmoidVersion": PLASMOID_VERSION,
-        "cliVersion": cli_version(),
+        "cliVersion": cli_ver,
         "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
 

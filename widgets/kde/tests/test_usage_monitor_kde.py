@@ -3,6 +3,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from typing import ClassVar
 from types import SimpleNamespace
 from unittest import mock
 
@@ -133,7 +134,7 @@ class SettingsTests(unittest.TestCase):
         "codex        enabled          Codex — ChatGPT plan\n"
         "claude       disabled (auto)  Claude — Claude Pro\n"
     )
-    SHOWS = {
+    SHOWS: ClassVar[dict[tuple[str, ...], str]] = {
         ("codex", "show"): "provider = codex\nstate = enabled\n[default] (auto-detected)\n[work] Work Account\n  disabled\n",
         ("codex", "account", "list"): "[work] Work Account\n  disabled\n",
         ("claude", "show"): "provider = claude\nstate = disabled (auto)\n(no accounts configured)\n",
