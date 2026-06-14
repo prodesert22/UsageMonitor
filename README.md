@@ -9,6 +9,20 @@ depending on external servers.
 A Linux port of [CodexBar](https://github.com/steipete/CodexBar) by
 [Peter Steinberger](https://github.com/steipete), reimplemented in Rust.
 
+## Build
+
+```bash
+cargo build --release
+# binary: ./target/release/usage-monitor-cli
+```
+
+## Install
+
+```bash
+cargo install --path usage-monitor-cli
+# installs `usage-monitor-cli` into ~/.cargo/bin (make sure it is on your PATH)
+```
+
 ## Providers
 
 | ID          | Service                       | Auth                                               |
@@ -128,13 +142,6 @@ credentials_path = "~/work/.claude/.credentials.json"
 usage-monitor-core/     Core library (models, providers, fetching)
 usage-monitor-cli/      Command-line interface
 docs/                   Provider extraction specifications
-```
-
-## Build
-
-```bash
-cargo build
-cargo test
 ```
 
 ## Tests
