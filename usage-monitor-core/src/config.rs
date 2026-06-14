@@ -340,7 +340,11 @@ impl AppConfig {
 
     /// Drops a provider entry when it holds no settings.
     fn prune_provider(&mut self, id: &str) {
-        if self.providers.get(id).is_some_and(ProviderSettings::is_empty) {
+        if self
+            .providers
+            .get(id)
+            .is_some_and(ProviderSettings::is_empty)
+        {
             self.providers.remove(id);
         }
     }
@@ -496,7 +500,10 @@ mod tests {
         cfg.set_account_label("opencode-go", DEFAULT_ACCOUNT, "Main");
         cfg.set_account_config("opencode-go", DEFAULT_ACCOUNT, "token", "x");
         cfg.unset_account_config("opencode-go", DEFAULT_ACCOUNT, "token");
-        assert_eq!(cfg.account_label("opencode-go", DEFAULT_ACCOUNT), Some("Main"));
+        assert_eq!(
+            cfg.account_label("opencode-go", DEFAULT_ACCOUNT),
+            Some("Main")
+        );
     }
 
     #[test]

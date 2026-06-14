@@ -25,13 +25,40 @@ cargo install --path usage-monitor-cli
 
 ## Providers
 
+Native Linux fetchers currently exist for:
+
 | ID          | Service                       | Auth                                               |
 |-------------|-------------------------------|----------------------------------------------------|
 | [`claude`](docs/providers/claude.md) | Claude Pro/Max (subscription) | Claude Code OAuth (`~/.claude/.credentials.json`)  |
 | [`codex`](docs/providers/codex.md) | Codex / ChatGPT plan          | Codex CLI OAuth (`~/.codex/auth.json`)             |
 | [`anthropic`](docs/providers/anthropic.md) | Anthropic API                 | `ANTHROPIC_API_KEY` or `--api-key`                 |
 | [`openai`](docs/providers/openai.md) | OpenAI API                    | `OPENAI_API_KEY` or `--api-key`                    |
+| [`deepseek`](docs/providers/deepseek.md) | DeepSeek API balance          | `DEEPSEEK_API_KEY`, `DEEPSEEK_KEY`, or `--api-key` |
+| [`deepgram`](docs/providers/deepgram.md) | Deepgram usage breakdown      | `DEEPGRAM_API_KEY`, optional `DEEPGRAM_PROJECT_ID` |
+| [`elevenlabs`](docs/providers/elevenlabs.md) | ElevenLabs subscription credits | `ELEVENLABS_API_KEY`, `XI_API_KEY`, or `--api-key` |
+| [`groq`](docs/providers/groq.md) | GroqCloud metrics             | `GROQ_API_KEY`, `GROQ_TOKEN`, or `--api-key` |
+| [`llmproxy`](docs/providers/llmproxy.md) | LLM Proxy aggregate quota stats | `LLM_PROXY_API_KEY` + base URL |
+| [`moonshot`](docs/providers/moonshot.md) | Moonshot / Kimi API balance | `MOONSHOT_API_KEY`, `MOONSHOT_KEY`, or `--api-key` |
+| [`openrouter`](docs/providers/openrouter.md) | OpenRouter credits/API key usage | `OPENROUTER_API_KEY` or `--api-key` |
+| [`venice`](docs/providers/venice.md) | Venice DIEM/USD balance | `VENICE_API_KEY`, `VENICE_KEY`, or `--api-key` |
+| [`cursor`](docs/providers/cursor.md) | Cursor plan + on-demand usage | Browser cookie/token, `CURSOR_SESSION_TOKEN` |
+| [`copilot`](docs/providers/copilot.md) | GitHub Copilot premium/chat quota | `COPILOT_API_TOKEN`, `GITHUB_TOKEN`, `GH_TOKEN` |
+| [`perplexity`](docs/providers/perplexity.md) | Perplexity plan/bonus/purchased credits | Browser cookie/token, `PERPLEXITY_SESSION_TOKEN` |
+| [`gemini`](docs/providers/gemini.md) | Gemini Code Assist daily quotas | gemini-cli OAuth (`~/.gemini/oauth_creds.json`) |
+| [`antigravity`](docs/providers/antigravity.md) | Antigravity Code Assist daily quotas | Google OAuth (`~/.codexbar/antigravity/oauth_creds.json`) |
+| [`abacus`](docs/providers/abacus.md) | Abacus AI compute points | Browser cookie, `ABACUS_COOKIE` |
+| [`devin`](docs/providers/devin.md) | Devin daily/weekly quota | Bearer token + org, `DEVIN_TOKEN`/`DEVIN_ORG` |
+| [`kimi`](docs/providers/kimi.md) | Kimi coding weekly/rate-limit | kimi-auth token, `KIMI_AUTH_TOKEN` |
+| [`kimik2`](docs/providers/kimik2.md) | Kimi K2 credits | `KIMI_K2_API_KEY` |
+| [`minimax`](docs/providers/minimax.md) | MiniMax coding/token-plan quota | `MINIMAX_API_KEY`/`MINIMAX_CODING_API_KEY` |
+| [`mistral`](docs/providers/mistral.md) | Mistral API monthly spend | Browser cookie, `MISTRAL_COOKIE` |
+| [`ollama`](docs/providers/ollama.md) | Ollama cloud session/weekly usage | Browser cookie, `OLLAMA_COOKIE` |
+| [`zai`](docs/providers/zai.md) | z.ai coding-plan quota | `Z_AI_API_KEY` |
 | [`opencode-go`](docs/providers/opencode-go.md) | OpenCode Go workspaces      | Manual session cookie |
+
+Auth and extraction were ported from the CodexBar macOS app. Browser-cookie
+providers (`cursor`, `perplexity`, `abacus`, `mistral`, `ollama`) take the
+cookie/token from config rather than auto-importing it from a browser.
 
 Per-provider setup, config keys, and troubleshooting live in
 [docs/providers/](docs/providers/README.md).
@@ -45,7 +72,7 @@ Per-provider setup, config keys, and troubleshooting live in
 | `enable <provider>` | Force a provider on, regardless of detection |
 | `disable <provider>` | Force a provider off; it is skipped by `fetch` and direct fetches are refused |
 | `auto <provider>` | Remove the explicit toggle and return to credential auto-detection |
-| `<provider> show` | Show a provider's state and configured accounts; secret values are masked. Supported providers: `opencode-go`, `claude`, `codex`, `anthropic`, `openai` |
+| `<provider> show` | Show any registered provider's state and configured accounts; secret values are masked |
 | `<provider> set <key> <value>` | Set a config value on the `default` account (e.g. `token`, `api_key`, `credentials_path`) |
 | `<provider> unset <key>` | Remove a config key from the `default` account |
 | `opencode-go workspace add <id\|url> [name] [--account <name>]` | Add an OpenCode Go workspace; accepts a `wrk_...` id or the dashboard URL, with an optional display name |
@@ -54,8 +81,8 @@ Per-provider setup, config keys, and troubleshooting live in
 
 All state persists in `~/.config/usage-monitor/config.toml`. Providers are
 auto-enabled when their credentials are detected (credential files for
-`claude`/`codex`, API key env vars for `anthropic`/`openai`) or when accounts
-are configured for them; explicit toggles always win.
+`claude`/`codex`/`gemini`/`antigravity`, or API-key/cookie env vars for the
+rest) or when accounts are configured for them; explicit toggles always win.
 
 ### Multiple accounts
 
@@ -112,6 +139,8 @@ usage-monitor-cli opencode-go workspace add https://opencode.ai/workspace/wrk_xx
 usage-monitor-cli openai set api_key sk-...
 usage-monitor-cli claude set credentials_path ~/.claude/.credentials.json
 usage-monitor-cli codex set credentials_path ~/.codex/auth.json
+usage-monitor-cli openrouter set api_key sk-or-...
+usage-monitor-cli deepseek set api_key sk-...
 
 # Multiple Claude logins side by side
 usage-monitor-cli claude account add personal --label "Personal"

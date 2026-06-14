@@ -35,11 +35,32 @@ impl ProviderRegistry {
     /// Registry with all built-in providers registered.
     pub fn with_defaults() -> Self {
         let mut reg = Self::new();
+        reg.register(Box::new(super::abacus::AbacusProvider::new()));
         reg.register(Box::new(super::anthropic::AnthropicProvider::new()));
+        reg.register(Box::new(super::antigravity::AntigravityProvider::new()));
         reg.register(Box::new(super::claude::ClaudeProvider::new()));
         reg.register(Box::new(super::codex::CodexProvider::new()));
+        reg.register(Box::new(super::copilot::CopilotProvider::new()));
+        reg.register(Box::new(super::cursor::CursorProvider::new()));
+        reg.register(Box::new(super::deepseek::DeepSeekProvider::new()));
+        reg.register(Box::new(super::deepgram::DeepgramProvider::new()));
+        reg.register(Box::new(super::devin::DevinProvider::new()));
+        reg.register(Box::new(super::elevenlabs::ElevenLabsProvider::new()));
+        reg.register(Box::new(super::gemini::GeminiProvider::new()));
+        reg.register(Box::new(super::groq::GroqProvider::new()));
+        reg.register(Box::new(super::kimi::KimiProvider::new()));
+        reg.register(Box::new(super::kimik2::KimiK2Provider::new()));
+        reg.register(Box::new(super::llmproxy::LlmProxyProvider::new()));
+        reg.register(Box::new(super::minimax::MiniMaxProvider::new()));
+        reg.register(Box::new(super::mistral::MistralProvider::new()));
+        reg.register(Box::new(super::moonshot::MoonshotProvider::new()));
+        reg.register(Box::new(super::ollama::OllamaProvider::new()));
         reg.register(Box::new(super::opencode_go::OpenCodeGoProvider::new()));
         reg.register(Box::new(super::openai::OpenAIProvider::new()));
+        reg.register(Box::new(super::openrouter::OpenRouterProvider::new()));
+        reg.register(Box::new(super::perplexity::PerplexityProvider::new()));
+        reg.register(Box::new(super::venice::VeniceProvider::new()));
+        reg.register(Box::new(super::zai::ZaiProvider::new()));
         reg
     }
 
@@ -157,7 +178,10 @@ impl ProviderRegistry {
         &self,
         targets: Vec<AccountTarget>,
         ctx_for: F,
-    ) -> Vec<(AccountTarget, Result<crate::model::UsageSnapshot, SpendPanelError>)>
+    ) -> Vec<(
+        AccountTarget,
+        Result<crate::model::UsageSnapshot, SpendPanelError>,
+    )>
     where
         F: Fn(&AccountTarget) -> ProviderContext,
     {
@@ -447,9 +471,7 @@ mod tests {
         assert_eq!(targets[0].account_id, "default");
         assert!(!targets[0].explicit);
 
-        let results = reg
-            .fetch_targets(targets, |_| ProviderContext::new())
-            .await;
+        let results = reg.fetch_targets(targets, |_| ProviderContext::new()).await;
         assert_eq!(results.len(), 1);
         assert!(results[0].1.is_ok());
     }
@@ -474,9 +496,7 @@ mod tests {
         assert_eq!(targets[0].label.as_deref(), Some("Work"));
         assert!(targets[0].explicit);
 
-        let results = reg
-            .fetch_targets(targets, |_| ProviderContext::new())
-            .await;
+        let results = reg.fetch_targets(targets, |_| ProviderContext::new()).await;
         let snap = results[0].1.as_ref().unwrap();
         assert_eq!(snap.account_id.as_deref(), Some("work"));
         assert_eq!(snap.account_label.as_deref(), Some("Work"));
@@ -535,9 +555,7 @@ mod tests {
 
         let start = std::time::Instant::now();
         let targets = reg.enabled_targets(&AppConfig::default());
-        let results = reg
-            .fetch_targets(targets, |_| ProviderContext::new())
-            .await;
+        let results = reg.fetch_targets(targets, |_| ProviderContext::new()).await;
         let elapsed = start.elapsed();
 
         assert_eq!(results.len(), 2);

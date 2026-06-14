@@ -67,6 +67,9 @@ enum Command {
         #[arg(long)]
         credentials_path: Option<String>,
     },
+    /// Provider-specific config commands for any registered provider
+    #[command(external_subcommand)]
+    Provider(Vec<String>),
 }
 
 /// Provider config commands. The bare `set`/`unset` operate on the `default`
@@ -186,10 +189,15 @@ async fn main() -> Result<()> {
         Command::Disable { provider } => set_enabled(&registry, config, &provider, Some(false))?,
         Command::Auto { provider } => set_enabled(&registry, config, &provider, None)?,
         Command::OpencodeGo(cmd) => match cmd {
-            OpencodeGoCmd::Show => handle_provider_cmd(&registry, config, "opencode-go", ProviderCmd::Show)?,
-            OpencodeGoCmd::Set { key, value } => {
-                handle_provider_cmd(&registry, config, "opencode-go", ProviderCmd::Set { key, value })?
+            OpencodeGoCmd::Show => {
+                handle_provider_cmd(&registry, config, "opencode-go", ProviderCmd::Show)?
             }
+            OpencodeGoCmd::Set { key, value } => handle_provider_cmd(
+                &registry,
+                config,
+                "opencode-go",
+                ProviderCmd::Set { key, value },
+            )?,
             OpencodeGoCmd::Unset { key } => {
                 handle_provider_cmd(&registry, config, "opencode-go", ProviderCmd::Unset { key })?
             }
@@ -220,9 +228,243 @@ async fn main() -> Result<()> {
             )
             .await?
         }
+        Command::Provider(args) => handle_dynamic_provider_cmd(&registry, config, args)?,
     }
 
     Ok(())
+}
+
+fn handle_dynamic_provider_cmd(
+    registry: &ProviderRegistry,
+    config: AppConfig,
+    args: Vec<String>,
+) -> Result<()> {
+    let (provider_id, rest) = args
+        .split_first()
+        .ok_or_else(|| anyhow::anyhow!("missing provider command"))?;
+    // Intercept help at every level *before* parsing, so a help flag never gets
+    // consumed as an account name or value (e.g. `account add -h`).
+    if maybe_print_dynamic_help(provider_id, rest) {
+        return Ok(());
+    }
+    let cmd = parse_provider_cmd(provider_id, rest)?;
+    handle_provider_cmd(registry, config, provider_id, cmd)
+}
+
+fn arg_is_help(s: &str) -> bool {
+    matches!(s, "help" | "-h" | "--help")
+}
+
+/// Prints contextual help for the dynamic provider command tree. Returns `true`
+/// when help was printed (caller should stop), `false` to continue parsing.
+fn maybe_print_dynamic_help(provider_id: &str, rest: &[String]) -> bool {
+    // Bare `<provider>` → provider help.
+    let Some((cmd, tail)) = rest.split_first() else {
+        print_provider_help(provider_id);
+        return true;
+    };
+    match cmd.as_str() {
+        c if arg_is_help(c) => {
+            print_provider_help(provider_id);
+            true
+        }
+        "account" => {
+            // `account` alone, or `account help`/`account -h` → account help.
+            let Some((sub, sub_tail)) = tail.split_first() else {
+                print_account_help(provider_id);
+                return true;
+            };
+            if arg_is_help(sub) {
+                print_account_help(provider_id);
+                return true;
+            }
+            // `account <sub> ... -h` → that subcommand's usage.
+            if sub_tail.iter().any(|a| arg_is_help(a)) {
+                print_account_sub_help(provider_id, sub);
+                return true;
+            }
+            false
+        }
+        "show" | "set" | "unset" => {
+            if tail.iter().any(|a| arg_is_help(a)) {
+                print_provider_help(provider_id);
+                return true;
+            }
+            false
+        }
+        _ => {
+            // Unknown leading command with a help flag → show provider help.
+            if tail.iter().any(|a| arg_is_help(a)) {
+                print_provider_help(provider_id);
+                return true;
+            }
+            false
+        }
+    }
+}
+
+fn print_account_help(provider_id: &str) {
+    println!("Manage named accounts for the {provider_id} provider.\n");
+    println!("Usage: usage-monitor-cli {provider_id} account <command>\n");
+    println!("Commands:");
+    println!("  list                       List configured accounts");
+    println!("  add <name> [--label <l>]   Add an account");
+    println!("  remove <name>              Remove an account");
+    println!("  set <name> <key> <value>   Set a config value on an account");
+    println!("  unset <name> <key>         Remove a config key from an account");
+    println!("  enable <name>              Enable an account");
+    println!("  disable <name>             Disable an account");
+    println!("  auto <name>                Return an account to auto-detection");
+}
+
+fn print_account_sub_help(provider_id: &str, sub: &str) {
+    let usage = match sub {
+        "list" => "account list",
+        "add" => "account add <name> [--label <label>]",
+        "remove" => "account remove <name>",
+        "set" => "account set <name> <key> <value>",
+        "unset" => "account unset <name> <key>",
+        "enable" => "account enable <name>",
+        "disable" => "account disable <name>",
+        "auto" => "account auto <name>",
+        _ => {
+            print_account_help(provider_id);
+            return;
+        }
+    };
+    println!("Usage: usage-monitor-cli {provider_id} {usage}");
+}
+
+fn print_provider_help(provider_id: &str) {
+    println!("Configure and inspect the {provider_id} provider.\n");
+    println!("Usage: usage-monitor-cli {provider_id} <command>\n");
+    println!("Commands:");
+    println!("  show                       Show state and configured accounts (secrets masked)");
+    println!("  set <key> <value>          Set a config value on the default account");
+    println!("  unset <key>                Remove a config key from the default account");
+    println!("  account <command>          Manage named accounts (see below)");
+    println!("  help                       Print this help\n");
+    println!("Account commands:");
+    println!("  account list                       List configured accounts");
+    println!("  account add <name> [--label <l>]   Add an account");
+    println!("  account remove <name>              Remove an account");
+    println!("  account set <name> <key> <value>   Set a config value on an account");
+    println!("  account unset <name> <key>         Remove a config key from an account");
+    println!("  account enable <name>              Enable an account");
+    println!("  account disable <name>             Disable an account");
+    println!("  account auto <name>                Return an account to auto-detection\n");
+    println!("Enable/disable the provider itself with:");
+    println!("  usage-monitor-cli enable {provider_id}");
+    println!("  usage-monitor-cli disable {provider_id}");
+    println!("  usage-monitor-cli auto {provider_id}");
+}
+
+fn parse_provider_cmd(provider_id: &str, args: &[String]) -> Result<ProviderCmd> {
+    let Some((cmd, rest)) = args.split_first() else {
+        anyhow::bail!(
+            "missing command for provider '{}'; expected show, set, unset, or account",
+            provider_id
+        );
+    };
+
+    match cmd.as_str() {
+        "show" => {
+            ensure_no_extra(provider_id, cmd, rest)?;
+            Ok(ProviderCmd::Show)
+        }
+        "set" => match rest {
+            [key, value] => Ok(ProviderCmd::Set {
+                key: key.clone(),
+                value: value.clone(),
+            }),
+            _ => anyhow::bail!("usage: {} set <key> <value>", provider_id),
+        },
+        "unset" => match rest {
+            [key] => Ok(ProviderCmd::Unset { key: key.clone() }),
+            _ => anyhow::bail!("usage: {} unset <key>", provider_id),
+        },
+        "account" => Ok(ProviderCmd::Account(parse_account_cmd(provider_id, rest)?)),
+        _ => anyhow::bail!(
+            "unknown command '{}' for provider '{}'; expected show, set, unset, or account",
+            cmd,
+            provider_id
+        ),
+    }
+}
+
+fn parse_account_cmd(provider_id: &str, args: &[String]) -> Result<AccountCmd> {
+    let Some((cmd, rest)) = args.split_first() else {
+        anyhow::bail!("missing account command for provider '{}'", provider_id);
+    };
+
+    match cmd.as_str() {
+        "list" => {
+            ensure_no_extra(provider_id, "account list", rest)?;
+            Ok(AccountCmd::List)
+        }
+        "add" => parse_account_add(provider_id, rest),
+        "remove" => match rest {
+            [name] => Ok(AccountCmd::Remove { name: name.clone() }),
+            _ => anyhow::bail!("usage: {} account remove <name>", provider_id),
+        },
+        "set" => match rest {
+            [name, key, value] => Ok(AccountCmd::Set {
+                name: name.clone(),
+                key: key.clone(),
+                value: value.clone(),
+            }),
+            _ => anyhow::bail!("usage: {} account set <name> <key> <value>", provider_id),
+        },
+        "unset" => match rest {
+            [name, key] => Ok(AccountCmd::Unset {
+                name: name.clone(),
+                key: key.clone(),
+            }),
+            _ => anyhow::bail!("usage: {} account unset <name> <key>", provider_id),
+        },
+        "enable" => match rest {
+            [name] => Ok(AccountCmd::Enable { name: name.clone() }),
+            _ => anyhow::bail!("usage: {} account enable <name>", provider_id),
+        },
+        "disable" => match rest {
+            [name] => Ok(AccountCmd::Disable { name: name.clone() }),
+            _ => anyhow::bail!("usage: {} account disable <name>", provider_id),
+        },
+        "auto" => match rest {
+            [name] => Ok(AccountCmd::Auto { name: name.clone() }),
+            _ => anyhow::bail!("usage: {} account auto <name>", provider_id),
+        },
+        _ => anyhow::bail!(
+            "unknown account command '{}' for provider '{}'; expected list, add, remove, set, unset, enable, disable, or auto",
+            cmd,
+            provider_id
+        ),
+    }
+}
+
+fn parse_account_add(provider_id: &str, args: &[String]) -> Result<AccountCmd> {
+    match args {
+        [name] => Ok(AccountCmd::Add {
+            name: name.clone(),
+            label: None,
+        }),
+        [name, flag, label] if flag == "--label" => Ok(AccountCmd::Add {
+            name: name.clone(),
+            label: Some(label.clone()),
+        }),
+        _ => anyhow::bail!(
+            "usage: {} account add <name> [--label <label>]",
+            provider_id
+        ),
+    }
+}
+
+fn ensure_no_extra(provider_id: &str, command: &str, rest: &[String]) -> Result<()> {
+    if rest.is_empty() {
+        Ok(())
+    } else {
+        anyhow::bail!("usage: {} {}", provider_id, command)
+    }
 }
 
 async fn run_fetch(
@@ -370,7 +612,12 @@ fn handle_account_cmd(mut config: AppConfig, provider_id: &str, cmd: AccountCmd)
             if created {
                 println!("{}.{} added ({})", provider_id, name, path.display());
             } else {
-                println!("{}.{} already exists ({})", provider_id, name, path.display());
+                println!(
+                    "{}.{} already exists ({})",
+                    provider_id,
+                    name,
+                    path.display()
+                );
             }
             Ok(())
         }
@@ -398,7 +645,13 @@ fn handle_account_cmd(mut config: AppConfig, provider_id: &str, cmd: AccountCmd)
         AccountCmd::Unset { name, key } => {
             config.unset_account_config(provider_id, &name, &key);
             let path = save_config(&config)?;
-            println!("{}.{}.{} removed ({})", provider_id, name, key, path.display());
+            println!(
+                "{}.{}.{} removed ({})",
+                provider_id,
+                name,
+                key,
+                path.display()
+            );
             Ok(())
         }
         AccountCmd::Enable { name } => set_account_toggle(config, provider_id, &name, Some(true)),
@@ -496,7 +749,9 @@ fn handle_workspace(mut config: AppConfig, cmd: WorkspaceCmd) -> Result<()> {
             name,
             account,
         } => {
-            let current = config.account_workspaces(WORKSPACE_PROVIDER, &account).to_vec();
+            let current = config
+                .account_workspaces(WORKSPACE_PROVIDER, &account)
+                .to_vec();
             let ids = opencode_go::add_workspace(&current, &workspace, name.as_deref())
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
             config.set_account_workspaces(WORKSPACE_PROVIDER, &account, ids.clone());
@@ -504,7 +759,9 @@ fn handle_workspace(mut config: AppConfig, cmd: WorkspaceCmd) -> Result<()> {
             println!("workspaces = [{}] ({})", ids.join(", "), path.display());
         }
         WorkspaceCmd::Remove { workspace, account } => {
-            let current = config.account_workspaces(WORKSPACE_PROVIDER, &account).to_vec();
+            let current = config
+                .account_workspaces(WORKSPACE_PROVIDER, &account)
+                .to_vec();
             let ids = opencode_go::remove_workspace(&current, &workspace)
                 .map_err(|e| anyhow::anyhow!("{}", e))?;
             config.set_account_workspaces(WORKSPACE_PROVIDER, &account, ids.clone());
@@ -516,7 +773,9 @@ fn handle_workspace(mut config: AppConfig, cmd: WorkspaceCmd) -> Result<()> {
             }
         }
         WorkspaceCmd::List { account } => {
-            let current = config.account_workspaces(WORKSPACE_PROVIDER, &account).to_vec();
+            let current = config
+                .account_workspaces(WORKSPACE_PROVIDER, &account)
+                .to_vec();
             if current.is_empty() {
                 println!("(no workspaces configured — auto-discovery will be used)");
             } else {

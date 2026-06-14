@@ -29,6 +29,92 @@ impl TestEnv {
             .env_remove("ANTHROPIC_API_KEY")
             .env_remove("OPENAI_API_KEY")
             .env_remove("CODEX_HOME")
+            .env_remove("AZURE_OPENAI_API_KEY")
+            .env_remove("AZURE_OPENAI_ENDPOINT")
+            .env_remove("AZURE_OPENAI_DEPLOYMENT_NAME")
+            .env_remove("CURSOR_COOKIE")
+            .env_remove("CURSOR_SESSION_TOKEN")
+            .env_remove("OPENCODE_COOKIE")
+            .env_remove("OPENCODE_SESSION_TOKEN")
+            .env_remove("ALIBABA_CODING_PLAN_API_KEY")
+            .env_remove("ALIBABA_CODING_PLAN_COOKIE")
+            .env_remove("ALIBABA_TOKEN_PLAN_COOKIE")
+            .env_remove("FACTORY_COOKIE")
+            .env_remove("FACTORY_TOKEN")
+            .env_remove("GEMINI_CREDENTIALS")
+            .env_remove("GOOGLE_APPLICATION_CREDENTIALS")
+            .env_remove("GOOGLE_CLOUD_PROJECT")
+            .env_remove("GITHUB_TOKEN")
+            .env_remove("COPILOT_TOKEN")
+            .env_remove("DEVIN_TOKEN")
+            .env_remove("DEVIN_COOKIE")
+            .env_remove("Z_AI_API_KEY")
+            .env_remove("MINIMAX_API_KEY")
+            .env_remove("MINIMAX_TOKEN")
+            .env_remove("MINIMAX_COOKIE")
+            .env_remove("MANUS_SESSION_TOKEN")
+            .env_remove("MANUS_COOKIE")
+            .env_remove("KIMI_AUTH_TOKEN")
+            .env_remove("KIMI_COOKIE")
+            .env_remove("KILO_API_KEY")
+            .env_remove("AUGMENT_TOKEN")
+            .env_remove("AUGMENT_COOKIE")
+            .env_remove("KIMI_K2_API_KEY")
+            .env_remove("KIMI_API_KEY")
+            .env_remove("MOONSHOT_API_KEY")
+            .env_remove("MOONSHOT_KEY")
+            .env_remove("AMP_ACCESS_TOKEN")
+            .env_remove("AMP_API_KEY")
+            .env_remove("AMP_COOKIE")
+            .env_remove("T3CHAT_COOKIE")
+            .env_remove("T3CHAT_SESSION_TOKEN")
+            .env_remove("OLLAMA_API_KEY")
+            .env_remove("OLLAMA_COOKIE")
+            .env_remove("SYNTHETIC_API_KEY")
+            .env_remove("WARP_API_KEY")
+            .env_remove("WARP_TOKEN")
+            .env_remove("OPENROUTER_API_KEY")
+            .env_remove("ELEVENLABS_API_KEY")
+            .env_remove("XI_API_KEY")
+            .env_remove("WINDSURF_TOKEN")
+            .env_remove("WINDSURF_COOKIE")
+            .env_remove("PERPLEXITY_SESSION_TOKEN")
+            .env_remove("PERPLEXITY_COOKIE")
+            .env_remove("MIMO_COOKIE")
+            .env_remove("XIAOMI_MIMO_COOKIE")
+            .env_remove("ARK_API_KEY")
+            .env_remove("VOLCENGINE_API_KEY")
+            .env_remove("DOUBAO_API_KEY")
+            .env_remove("ABACUS_COOKIE")
+            .env_remove("ABACUS_TOKEN")
+            .env_remove("MISTRAL_COOKIE")
+            .env_remove("MISTRAL_SESSION")
+            .env_remove("DEEPSEEK_API_KEY")
+            .env_remove("DEEPSEEK_KEY")
+            .env_remove("CODEBUFF_API_KEY")
+            .env_remove("CROF_API_KEY")
+            .env_remove("CROFAI_API_KEY")
+            .env_remove("VENICE_API_KEY")
+            .env_remove("VENICE_KEY")
+            .env_remove("COMMANDCODE_COOKIE")
+            .env_remove("COMMAND_CODE_COOKIE")
+            .env_remove("STEPFUN_USERNAME")
+            .env_remove("STEPFUN_PASSWORD")
+            .env_remove("STEPFUN_OASIS_TOKEN")
+            .env_remove("AWS_ACCESS_KEY_ID")
+            .env_remove("AWS_SECRET_ACCESS_KEY")
+            .env_remove("AWS_SESSION_TOKEN")
+            .env_remove("AWS_REGION")
+            .env_remove("AWS_DEFAULT_REGION")
+            .env_remove("CODEXBAR_BEDROCK_BUDGET")
+            .env_remove("GROK_COOKIE")
+            .env_remove("GROK_TOKEN")
+            .env_remove("GROQ_API_KEY")
+            .env_remove("GROQ_TOKEN")
+            .env_remove("LLM_PROXY_API_KEY")
+            .env_remove("LLM_PROXY_BASE_URL")
+            .env_remove("DEEPGRAM_API_KEY")
+            .env_remove("DEEPGRAM_PROJECT_ID")
             .output()
             .expect("run binary")
     }
@@ -68,11 +154,27 @@ fn test_list_shows_all_providers_auto_disabled_without_credentials() {
     let out = env.run(&["list"]);
     assert!(out.status.success());
     let text = stdout(&out);
-    for id in ["anthropic", "claude", "codex", "openai", "opencode-go"] {
+    for id in [
+        "anthropic",
+        "claude",
+        "codex",
+        "openai",
+        "opencode-go",
+        "cursor",
+        "gemini",
+        "openrouter",
+        "deepseek",
+        "groq",
+        "llmproxy",
+        "deepgram",
+        "abacus",
+        "minimax",
+        "zai",
+    ] {
         assert!(text.contains(id), "missing {} in: {}", id, text);
     }
     // Fresh HOME has no credentials → everything auto-disabled.
-    assert_eq!(text.matches("disabled (auto)").count(), 5, "got: {}", text);
+    assert_eq!(text.matches("disabled (auto)").count(), 26, "got: {}", text);
 }
 
 #[test]
@@ -86,7 +188,7 @@ fn test_list_auto_enables_detected_credentials() {
         "got: {}",
         text
     );
-    assert_eq!(text.matches("disabled (auto)").count(), 4, "got: {}", text);
+    assert_eq!(text.matches("disabled (auto)").count(), 25, "got: {}", text);
 }
 
 #[test]
@@ -189,6 +291,99 @@ fn test_provider_config_set_show_unset() {
 }
 
 #[test]
+fn test_dynamic_provider_config_commands() {
+    let env = TestEnv::new("dynamic-provider");
+    let out = env.run(&["openrouter", "set", "api_key", "sk-or-secret-value"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(!stdout(&out).contains("sk-or-secret"));
+
+    let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(
+        raw.contains("[providers.openrouter.accounts.default]"),
+        "got: {}",
+        raw
+    );
+    assert!(
+        raw.contains(r#"api_key = "sk-or-secret-value""#),
+        "got: {}",
+        raw
+    );
+
+    let out = env.run(&["openrouter", "show"]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("provider = openrouter"));
+    assert!(!stdout(&out).contains("sk-or-secret-value"));
+
+    let out = env.run(&[
+        "deepseek",
+        "account",
+        "add",
+        "work",
+        "--label",
+        "Work DeepSeek",
+    ]);
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(stdout(&out).contains("deepseek.work added"));
+}
+
+#[test]
+fn test_provider_help_variants() {
+    let env = TestEnv::new("provider-help");
+    for args in [
+        vec!["deepseek", "-h"],
+        vec!["deepseek", "--help"],
+        vec!["deepseek", "help"],
+        vec!["deepseek"],
+    ] {
+        let out = env.run(&args);
+        assert!(out.status.success(), "args {:?} stderr: {}", args, stderr(&out));
+        let text = stdout(&out);
+        assert!(text.contains("Usage: usage-monitor-cli deepseek"), "args {:?}", args);
+        assert!(text.contains("account list"), "args {:?}", args);
+    }
+}
+
+#[test]
+fn test_provider_account_help_variants() {
+    let env = TestEnv::new("account-help");
+    for args in [
+        vec!["deepseek", "account", "-h"],
+        vec!["deepseek", "account", "--help"],
+        vec!["deepseek", "account", "help"],
+        vec!["deepseek", "account"],
+    ] {
+        let out = env.run(&args);
+        assert!(out.status.success(), "args {:?} stderr: {}", args, stderr(&out));
+        let text = stdout(&out);
+        assert!(
+            text.contains("account <command>") || text.contains("account command"),
+            "args {:?} got: {}",
+            args,
+            text
+        );
+    }
+    // Leaf subcommand help prints usage.
+    let out = env.run(&["deepseek", "account", "add", "-h"]);
+    assert!(out.status.success());
+    assert!(stdout(&out).contains("account add <name>"));
+}
+
+#[test]
+fn test_help_flag_never_creates_account() {
+    // Regression: `account add -h` must print help, not create an account named "-h".
+    let env = TestEnv::new("account-help-no-side-effect");
+    let out = env.run(&["deepseek", "account", "add", "-h"]);
+    assert!(out.status.success());
+    // No config written / no "-h" account.
+    if let Ok(raw) = std::fs::read_to_string(env.config_path()) {
+        assert!(!raw.contains("accounts.-h"), "junk account created: {}", raw);
+    }
+    // And `account list` shows nothing was added.
+    let out = env.run(&["deepseek", "account", "list"]);
+    assert!(!stdout(&out).contains("-h"), "got: {}", stdout(&out));
+}
+
+#[test]
 fn test_workspace_add_remove_list() {
     let env = TestEnv::new("workspace");
     let out = env.run(&["opencode-go", "workspace", "add", "wrk_first"]);
@@ -277,7 +472,11 @@ fn test_account_add_list_remove() {
     assert!(stdout(&out).contains("already exists"));
 
     let out = env.run(&["claude", "account", "list"]);
-    assert!(stdout(&out).contains("[work] Work Claude"), "got: {}", stdout(&out));
+    assert!(
+        stdout(&out).contains("[work] Work Claude"),
+        "got: {}",
+        stdout(&out)
+    );
 
     let out = env.run(&["claude", "account", "remove", "work"]);
     assert!(out.status.success());
@@ -313,8 +512,16 @@ fn test_account_set_and_show_multiple() {
     env.run(&["claude", "account", "disable", "work"]);
 
     let raw = std::fs::read_to_string(env.config_path()).unwrap();
-    assert!(raw.contains("[providers.claude.accounts.personal]"), "got: {}", raw);
-    assert!(raw.contains("[providers.claude.accounts.work]"), "got: {}", raw);
+    assert!(
+        raw.contains("[providers.claude.accounts.personal]"),
+        "got: {}",
+        raw
+    );
+    assert!(
+        raw.contains("[providers.claude.accounts.work]"),
+        "got: {}",
+        raw
+    );
 
     let out = env.run(&["claude", "show"]);
     let text = stdout(&out);
@@ -329,10 +536,21 @@ fn test_account_set_and_show_multiple() {
 #[test]
 fn test_fetch_unknown_account_fails() {
     let env = TestEnv::new("fetch-acct");
-    env.run(&["claude", "account", "set", "work", "credentials_path", "/tmp/w.json"]);
+    env.run(&[
+        "claude",
+        "account",
+        "set",
+        "work",
+        "credentials_path",
+        "/tmp/w.json",
+    ]);
     let out = env.run(&["fetch", "claude", "--account", "ghost"]);
     assert!(!out.status.success());
-    assert!(stderr(&out).contains("no account 'ghost'"), "stderr: {}", stderr(&out));
+    assert!(
+        stderr(&out).contains("no account 'ghost'"),
+        "stderr: {}",
+        stderr(&out)
+    );
 }
 
 #[test]
@@ -340,7 +558,14 @@ fn test_auto_default_coexists_with_named_account() {
     let env = TestEnv::new("coexist");
     env.write_claude_credentials();
     env.run(&["claude", "account", "add", "work", "--label", "Work"]);
-    env.run(&["claude", "account", "set", "work", "credentials_path", "/tmp/w.json"]);
+    env.run(&[
+        "claude",
+        "account",
+        "set",
+        "work",
+        "credentials_path",
+        "/tmp/w.json",
+    ]);
 
     // show lists both the auto-detected default and the named account.
     let text = stdout(&env.run(&["claude", "show"]));
@@ -361,7 +586,9 @@ fn test_fetch_emits_one_block_per_account() {
     let env = TestEnv::new("fetch-per-account");
     // Two accounts pointed at non-existent credential files: both fail, but
     // each must be attempted and reported under its own label.
-    env.run(&["claude", "account", "add", "personal", "--label", "Personal"]);
+    env.run(&[
+        "claude", "account", "add", "personal", "--label", "Personal",
+    ]);
     env.run(&[
         "claude",
         "account",
