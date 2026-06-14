@@ -13,7 +13,7 @@
     "Id": "dev.usage-monitor.kde",
     "License": "MIT",
     "Name": "Usage Monitor",
-    "Version": "0.6.0",
+    "Version": "0.6.1",
     "Website": "https://github.com/prodesert22/UsageMonitor"
   },
   "KPackageStructure": "Plasma/Applet",

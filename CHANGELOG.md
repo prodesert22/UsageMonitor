@@ -5,7 +5,26 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [0.6.0] — unreleased
+## [0.6.1] — unreleased
+
+Polishes the project presentation and keeps the KDE plasmoid on Plasma's stock
+system-monitor icon.
+
+### Added
+- Project logo asset under `assets/` and a centered logo in the README.
+- README badges for CI, license, latest GitHub release, Rust 2024 edition, last
+  commit, and Linux platform support.
+- GitHub Actions CI workflow covering Rust formatting, Clippy, Rust tests, Ruff,
+  and widget Python tests.
+
+### Changed
+- The KDE plasmoid metadata, About page, and panel representation use Plasma's
+  default `utilities-system-monitor` icon again.
+- Bumped the CLI/core workspace and KDE plasmoid version to `0.6.1`.
+
+See [releases/v0.6.1.md](releases/v0.6.1.md).
+
+## [0.6.0]
 
 Adds desktop widget support for KDE Plasma 6 and Waybar.
 

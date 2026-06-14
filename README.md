@@ -1,5 +1,16 @@
 # Usage Monitor
 
+<p align="center">
+  <img src="assets/UsageMonitor.png" alt="Usage Monitor logo" width="128">
+</p>
+
+[![CI](https://github.com/prodesert22/UsageMonitor/actions/workflows/ci.yml/badge.svg)](https://github.com/prodesert22/UsageMonitor/actions/workflows/ci.yml)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/prodesert22/UsageMonitor?include_prereleases&logo=github)](https://github.com/prodesert22/UsageMonitor/releases)
+[![Rust](https://img.shields.io/badge/rust-2024-edition?logo=rust)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
+[![Last commit](https://img.shields.io/github/last-commit/prodesert22/UsageMonitor)](https://github.com/prodesert22/UsageMonitor/commits/main)
+[![Platform](https://img.shields.io/badge/platform-linux-lightgrey)](docs/installation.md)
+
 AI API usage monitor for your terminal.
 
 Collects, stores, and displays consumption metrics from AI services like
