@@ -1,6 +1,6 @@
 use anyhow::Result;
-use usage_monitor_core::config::AppConfig;
-use usage_monitor_core::provider::registry::ProviderRegistry;
+use usage_monitor_cli::config::AppConfig;
+use usage_monitor_cli::provider::registry::ProviderRegistry;
 
 use crate::cli::{AccountCmd, ProviderCmd};
 use crate::commands::handle_provider_cmd;

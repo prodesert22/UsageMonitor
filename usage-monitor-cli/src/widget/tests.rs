@@ -1,6 +1,6 @@
 use super::{payload::*, *};
-use usage_monitor_core::provider::registry::AccountTarget;
-use usage_monitor_core::{RateWindow, UsageSnapshot};
+use usage_monitor_cli::provider::registry::AccountTarget;
+use usage_monitor_cli::{RateWindow, UsageSnapshot};
 
 #[test]
 fn test_ratio_percentage_clamps_and_rounds() {

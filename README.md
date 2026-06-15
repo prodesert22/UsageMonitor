@@ -5,6 +5,7 @@
 </p>
 
 [![CI](https://github.com/prodesert22/UsageMonitor/actions/workflows/ci.yml/badge.svg)](https://github.com/prodesert22/UsageMonitor/actions/workflows/ci.yml)
+[![Crates.io](https://img.shields.io/crates/v/usage-monitor-cli?logo=rust)](https://crates.io/crates/usage-monitor-cli)
 [![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![Release](https://img.shields.io/github/v/release/prodesert22/UsageMonitor?include_prereleases&logo=github)](https://github.com/prodesert22/UsageMonitor/releases)
 [![Rust](https://img.shields.io/badge/rust-2024-edition?logo=rust)](https://blog.rust-lang.org/2025/02/20/Rust-1.85.0.html)
@@ -43,9 +44,23 @@ cargo build --release
 
 ## Install
 
+From [crates.io](https://crates.io/crates/usage-monitor-cli):
+
+```bash
+cargo install usage-monitor-cli
+# installs `usage-monitor-cli` into ~/.cargo/bin (make sure it is on your PATH)
+```
+
+Or from a local checkout:
+
 ```bash
 cargo install --path usage-monitor-cli
-# installs `usage-monitor-cli` into ~/.cargo/bin (make sure it is on your PATH)
+```
+
+Then install a desktop widget (optional):
+
+```bash
+usage-monitor-cli widget install all   # KDE plasmoid + Waybar wrapper
 ```
 
 ## Providers
@@ -98,6 +113,10 @@ Per-provider setup, config keys, and troubleshooting live in
 | `fetch [provider] [--account <name>]` | Fetch usage. Without a provider, fetches all enabled providers concurrently; with one, fetches it (refused if explicitly disabled). `--account` restricts to a single account |
 | `widget waybar [provider] [--account <name>]` | Emit single-line JSON for a Waybar custom module |
 | `widget kde [provider] [--account <name>] [--pretty]` | Emit the JSON payload consumed by the KDE Plasma widget helper |
+| `widget install <kde\|waybar\|all> [--force]` | Install an embedded desktop widget (KDE via `kpackagetool6`, Waybar wrapper into `~/.local/bin`) |
+| `widget uninstall <kde\|waybar\|all>` | Remove an installed widget |
+| `widget sync` | Reinstall any installed widget older than the CLI (run at login by an autostart entry, so upgrades apply automatically) |
+| `widget doctor` | Print resolved widget install paths, versions, and tool availability |
 | `enable <provider>` | Force a provider on, regardless of detection |
 | `disable <provider>` | Force a provider off; it is skipped by `fetch` and direct fetches are refused |
 | `auto <provider>` | Remove the explicit toggle and return to credential auto-detection |
@@ -201,9 +220,9 @@ credentials_path = "~/work/.claude/.credentials.json"
 ## Structure
 
 ```
-usage-monitor-core/     Core library (models, providers, registry, config)
-usage-monitor-cli/      Command-line interface
-widgets/                KDE Plasma and Waybar integrations
+usage-monitor-cli/      CLI package, internal library modules, and embedded
+                        widget assets (assets/kde, assets/waybar)
+widgets/                Widget unit tests (KDE/Waybar helpers)
 docs/                   Guides + per-provider specifications
 releases/               Per-version release notes
 ```
@@ -217,8 +236,8 @@ See [docs/architecture.md](docs/architecture.md) for a detailed breakdown.
 cargo test
 
 # Specific module
-cargo test -p usage-monitor-core -- model::usage
-cargo test -p usage-monitor-core -- provider::anthropic
+cargo test -p usage-monitor-cli -- model::usage
+cargo test -p usage-monitor-cli -- provider::anthropic
 
 # Desktop widget helpers
 python -m unittest discover -s widgets -p 'test_*.py'

@@ -126,8 +126,8 @@ impl OllamaProvider {
     }
 
     fn parse(html: &str) -> Result<UsageSnapshot, SpendPanelError> {
-        let session = percent_after(html, "Session usage")
-            .or_else(|| percent_after(html, "Hourly usage"));
+        let session =
+            percent_after(html, "Session usage").or_else(|| percent_after(html, "Hourly usage"));
         let weekly = percent_after(html, "Weekly usage");
 
         if session.is_none() && weekly.is_none() {
@@ -149,8 +149,12 @@ impl OllamaProvider {
                 Some(RateWindow::new(s.round() as u64, 100, "Session", 5 * 60));
         }
         if let Some(w) = weekly {
-            snapshot.secondary_rate_window =
-                Some(RateWindow::new(w.round() as u64, 100, "Weekly", 7 * 24 * 60));
+            snapshot.secondary_rate_window = Some(RateWindow::new(
+                w.round() as u64,
+                100,
+                "Weekly",
+                7 * 24 * 60,
+            ));
         }
         if let Some(plan) = span_after(html, "Cloud Usage") {
             snapshot.plan = Some(PlanInfo {

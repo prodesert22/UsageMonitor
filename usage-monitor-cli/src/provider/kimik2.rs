@@ -171,9 +171,11 @@ impl UsageProvider for KimiK2Provider {
     }
 
     fn detect_credentials(&self) -> bool {
-        ["KIMI_K2_API_KEY", "KIMIK2_API_KEY"]
-            .iter()
-            .any(|e| std::env::var(e).map(|v| !v.trim().is_empty()).unwrap_or(false))
+        ["KIMI_K2_API_KEY", "KIMIK2_API_KEY"].iter().any(|e| {
+            std::env::var(e)
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false)
+        })
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {

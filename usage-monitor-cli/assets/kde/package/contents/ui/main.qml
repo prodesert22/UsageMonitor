@@ -18,7 +18,7 @@ PlasmoidItem {
     property bool busy: false
     property var settings: ({"providers": [], "pinnableProviders": [], "pinnedProvider": "", "refreshIntervalSeconds": 30, "showBarText": true, "showAccountEmail": true, "providerOrder": "[]", "plasmoidVersion": "", "cliVersion": ""})
     property string helperPath: localFilePath(Qt.resolvedUrl("../code/usage_monitor_kde.py"))
-    property string monitorIcon: "utilities-system-monitor"
+    property string monitorIcon: Qt.resolvedUrl("../images/usage-monitor.png")
 
     // Reload display prefs (bar text, refresh interval) when the popup opens, so
     // changes made in the native config window take effect.
@@ -29,7 +29,7 @@ PlasmoidItem {
         }
     }
 
-    Plasmoid.icon: "utilities-system-monitor"
+    Plasmoid.icon: Qt.resolvedUrl("../images/usage-monitor.png")
     toolTipMainText: "Usage Monitor"
     toolTipSubText: summary.tooltip || errorText || "No provider data yet"
     preferredRepresentation: compactRepresentation
@@ -185,6 +185,16 @@ PlasmoidItem {
     }
 
     compactRepresentation: Item {
+        id: compactRoot
+
+        // The icon scales to the panel thickness so it is never clipped on a
+        // thin panel (which previously hid it entirely). Capped at smallMedium
+        // so it does not balloon on a thick panel or in the desktop applet.
+        readonly property int iconSize: Math.max(
+            Kirigami.Units.iconSizes.small,
+            Math.min(Kirigami.Units.iconSizes.smallMedium,
+                     compactRoot.height - Kirigami.Units.smallSpacing * 2))
+
         implicitWidth: compactRow.implicitWidth + Kirigami.Units.smallSpacing * 2
         implicitHeight: Math.max(Kirigami.Units.iconSizes.smallMedium, compactLabel.implicitHeight) + Kirigami.Units.smallSpacing * 2
 
@@ -210,12 +220,14 @@ PlasmoidItem {
 
             Kirigami.Icon {
                 source: root.monitorIcon
-                Layout.preferredWidth: Kirigami.Units.iconSizes.smallMedium
-                Layout.preferredHeight: Kirigami.Units.iconSizes.smallMedium
+                Layout.alignment: Qt.AlignVCenter
+                Layout.preferredWidth: compactRoot.iconSize
+                Layout.preferredHeight: compactRoot.iconSize
             }
 
             PlasmaComponents3.Label {
                 id: compactLabel
+                Layout.alignment: Qt.AlignVCenter
                 visible: root.settings.showBarText !== false
                 text: root.summary.text || "--"
                 wrapMode: Text.NoWrap

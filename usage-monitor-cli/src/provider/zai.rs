@@ -130,7 +130,10 @@ impl ZaiProvider {
     /// Quota endpoint: explicit base_url/host config or env, else global default.
     fn quota_url(&self, ctx: &ProviderContext) -> String {
         if let Some(base) = self.base_url.as_deref() {
-            return format!("{}/api/monitor/usage/quota/limit", base.trim_end_matches('/'));
+            return format!(
+                "{}/api/monitor/usage/quota/limit",
+                base.trim_end_matches('/')
+            );
         }
         let host = ctx
             .config
@@ -138,14 +141,21 @@ impl ZaiProvider {
             .or_else(|| ctx.config.get("host"))
             .map(|s| Self::clean(s))
             .filter(|s| !s.is_empty())
-            .or_else(|| std::env::var("Z_AI_API_HOST").ok().filter(|s| !s.is_empty()))
+            .or_else(|| {
+                std::env::var("Z_AI_API_HOST")
+                    .ok()
+                    .filter(|s| !s.is_empty())
+            })
             .unwrap_or_else(|| "https://api.z.ai".to_string());
         let host = if host.starts_with("http") {
             host
         } else {
             format!("https://{}", host)
         };
-        format!("{}/api/monitor/usage/quota/limit", host.trim_end_matches('/'))
+        format!(
+            "{}/api/monitor/usage/quota/limit",
+            host.trim_end_matches('/')
+        )
     }
 
     fn resolve_key(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
@@ -201,7 +211,8 @@ impl ZaiProvider {
         // Multiple token limits: shortest window → tertiary (session), longest → primary.
         token_limits.sort_by_key(|l| l.window_minutes());
         if token_limits.len() >= 2 {
-            snapshot.tertiary_rate_window = Some(token_limits.first().unwrap().to_window("Session tokens"));
+            snapshot.tertiary_rate_window =
+                Some(token_limits.first().unwrap().to_window("Session tokens"));
             snapshot.primary_rate_window = Some(token_limits.last().unwrap().to_window("Tokens"));
         } else if let Some(only) = token_limits.first() {
             snapshot.primary_rate_window = Some(only.to_window("Tokens"));

@@ -134,7 +134,12 @@ impl GeminiProvider {
         client: &reqwest::Client,
     ) -> Result<String, SpendPanelError> {
         for key in ["access_token", "token"] {
-            if let Some(value) = ctx.config.get(key).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            if let Some(value) = ctx
+                .config
+                .get(key)
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+            {
                 return Ok(value.to_string());
             }
         }
@@ -162,12 +167,16 @@ impl GeminiProvider {
             return Ok(token);
         }
 
-        let refresh = creds.refresh_token.filter(|t| !t.is_empty()).ok_or_else(|| {
-            SpendPanelError::AuthFailed(
-                "gemini".into(),
-                "access token expired and no refresh_token available; re-run gemini login".into(),
-            )
-        })?;
+        let refresh = creds
+            .refresh_token
+            .filter(|t| !t.is_empty())
+            .ok_or_else(|| {
+                SpendPanelError::AuthFailed(
+                    "gemini".into(),
+                    "access token expired and no refresh_token available; re-run gemini login"
+                        .into(),
+                )
+            })?;
         self.refresh_access_token(client, &refresh).await
     }
 
@@ -205,8 +214,15 @@ impl GeminiProvider {
     }
 
     /// Loads the Code Assist project id (best-effort; `None` on any failure).
-    async fn load_project_id(&self, client: &reqwest::Client, access_token: &str) -> Option<String> {
-        let url = format!("{}/v1internal:loadCodeAssist", self.cloudcode_base().trim_end_matches('/'));
+    async fn load_project_id(
+        &self,
+        client: &reqwest::Client,
+        access_token: &str,
+    ) -> Option<String> {
+        let url = format!(
+            "{}/v1internal:loadCodeAssist",
+            self.cloudcode_base().trim_end_matches('/')
+        );
         let resp = client
             .post(url)
             .header("Authorization", format!("Bearer {}", access_token))
@@ -221,7 +237,9 @@ impl GeminiProvider {
         let json: serde_json::Value = resp.json().await.ok()?;
         let project = json.get("cloudaicompanionProject");
         match project {
-            Some(serde_json::Value::String(s)) if !s.trim().is_empty() => Some(s.trim().to_string()),
+            Some(serde_json::Value::String(s)) if !s.trim().is_empty() => {
+                Some(s.trim().to_string())
+            }
             Some(serde_json::Value::Object(o)) => o
                 .get("id")
                 .or_else(|| o.get("projectId"))
@@ -277,9 +295,13 @@ impl GeminiProvider {
 
     /// Groups buckets by model (keeping the lowest remaining fraction per model).
     fn parse_quota(resp: &QuotaResponse) -> Result<Vec<ModelQuota>, SpendPanelError> {
-        let buckets = resp.buckets.as_deref().filter(|b| !b.is_empty()).ok_or_else(|| {
-            SpendPanelError::ParseError("gemini".into(), "no quota buckets in response".into())
-        })?;
+        let buckets = resp
+            .buckets
+            .as_deref()
+            .filter(|b| !b.is_empty())
+            .ok_or_else(|| {
+                SpendPanelError::ParseError("gemini".into(), "no quota buckets in response".into())
+            })?;
 
         let mut map: std::collections::BTreeMap<String, (f64, Option<String>)> =
             std::collections::BTreeMap::new();
@@ -468,10 +490,10 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1internal:loadCodeAssist"))
-            .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_raw(r#"{"cloudaicompanionProject":"proj-1"}"#, "application/json"),
-            )
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"cloudaicompanionProject":"proj-1"}"#,
+                "application/json",
+            ))
             .mount(&server)
             .await;
         Mock::given(method("POST"))

@@ -86,7 +86,12 @@ impl MiniMaxProvider {
         let base = self
             .base_url
             .clone()
-            .or_else(|| ctx.config.get("base_url").map(|s| Self::clean(s)).filter(|s| !s.is_empty()))
+            .or_else(|| {
+                ctx.config
+                    .get("base_url")
+                    .map(|s| Self::clean(s))
+                    .filter(|s| !s.is_empty())
+            })
             .unwrap_or_else(|| "https://api.minimax.io".to_string());
         let base = base.trim_end_matches('/');
         vec![
@@ -136,9 +141,15 @@ impl MiniMaxProvider {
         if let Some(b) = base.filter(|b| b.status_code != 0) {
             let lower = b.status_msg.to_lowercase();
             if b.status_code == 1004 || lower.contains("login") || lower.contains("cookie") {
-                return Err(SpendPanelError::AuthFailed("minimax".into(), b.status_msg.clone()));
+                return Err(SpendPanelError::AuthFailed(
+                    "minimax".into(),
+                    b.status_msg.clone(),
+                ));
             }
-            return Err(SpendPanelError::ProviderError("minimax".into(), b.status_msg.clone()));
+            return Err(SpendPanelError::ProviderError(
+                "minimax".into(),
+                b.status_msg.clone(),
+            ));
         }
 
         if data.model_remains.is_empty() {
@@ -166,8 +177,12 @@ impl MiniMaxProvider {
                 Some(RateWindow::new(used_from_remaining(r), 100, "Interval", 0));
         }
         if let Some(r) = weekly {
-            snapshot.secondary_rate_window =
-                Some(RateWindow::new(used_from_remaining(r), 100, "Weekly", 7 * 24 * 60));
+            snapshot.secondary_rate_window = Some(RateWindow::new(
+                used_from_remaining(r),
+                100,
+                "Weekly",
+                7 * 24 * 60,
+            ));
         }
         if snapshot.primary_rate_window.is_none() && snapshot.secondary_rate_window.is_none() {
             return Err(SpendPanelError::ParseError(
@@ -205,7 +220,11 @@ impl UsageProvider for MiniMaxProvider {
     fn detect_credentials(&self) -> bool {
         ["MINIMAX_CODING_API_KEY", "MINIMAX_API_KEY"]
             .iter()
-            .any(|e| std::env::var(e).map(|v| !v.trim().is_empty()).unwrap_or(false))
+            .any(|e| {
+                std::env::var(e)
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false)
+            })
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {

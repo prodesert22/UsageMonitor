@@ -1,10 +1,23 @@
 # KDE Plasma 6 widget
 
-The plasmoid lives at [`widgets/kde/package`](../../widgets/kde/package).
+The plasmoid is embedded in the CLI binary; its source lives in the asset tree
+at
+[`usage-monitor-cli/assets/kde/package`](../../usage-monitor-cli/assets/kde/package)
+and is written to disk by the `widget install` subcommand.
+
+The panel bar shows the logo and the overall usage:
+
+![Usage Monitor in the panel bar](../../assets/panel_bar.png)
+
+Clicking it opens the full popup, with one card per provider/account:
+
+![Usage Monitor KDE popup](../../assets/kde_widget.png)
 
 ## Features
 
-- Panel text with overall usage, or a single pinned provider.
+- Panel bar shows the bundled Usage Monitor logo plus the overall usage text (or
+  a single pinned provider); the icon scales to the panel thickness so it stays
+  visible on thin panels.
 - Full popup (usage only) with one card per provider/account, an overall
   percentage, and a progress bar for every usage window (Session/Weekly/Monthly)
   returned by the provider, plus reset times and error/stale indicators.
@@ -36,21 +49,28 @@ Build/install the CLI first so `usage-monitor-cli` is on `PATH`:
 cargo install --path usage-monitor-cli
 ```
 
-Development install:
+Then install the plasmoid:
 
 ```bash
-kpackagetool6 --type Plasma/Applet --install widgets/kde/package
+usage-monitor-cli widget install kde
 ```
 
-Update an existing install:
+This stages the package under `~/.local/share/usage-monitor/kde/package` and
+registers it with `kpackagetool6` (`--install` or `--upgrade` automatically). If
+`kpackagetool6` is missing or fails, re-run with `--force` to copy the package
+straight into `~/.local/share/plasma/plasmoids/dev.usage-monitor.kde`. Remove it
+with `usage-monitor-cli widget uninstall kde`, and inspect resolved paths with
+`usage-monitor-cli widget doctor`.
+
+The installer also records the version and adds a login autostart entry that
+runs `usage-monitor-cli widget sync`, so upgrading the CLI auto-upgrades the
+plasmoid on the next login (see [Automatic upgrades](README.md#automatic-upgrades)).
+
+Manual development install with `kpackagetool6` (equivalent to the above):
 
 ```bash
-kpackagetool6 --type Plasma/Applet --upgrade widgets/kde/package
-```
-
-Remove the development install:
-
-```bash
+kpackagetool6 --type Plasma/Applet --install usage-monitor-cli/assets/kde/package
+kpackagetool6 --type Plasma/Applet --upgrade usage-monitor-cli/assets/kde/package
 kpackagetool6 --type Plasma/Applet --remove dev.usage-monitor.kde
 ```
 
@@ -121,17 +141,18 @@ the full multi-account setup of codex, claude, gemini, and antigravity.
 These are mostly for debugging; Plasma calls them automatically:
 
 ```bash
-python widgets/kde/package/contents/code/usage_monitor_kde.py summary
-python widgets/kde/package/contents/code/usage_monitor_kde.py settings
-python widgets/kde/package/contents/code/usage_monitor_kde.py cache
-python widgets/kde/package/contents/code/usage_monitor_kde.py cache-clear
-python widgets/kde/package/contents/code/usage_monitor_kde.py cost
-python widgets/kde/package/contents/code/usage_monitor_kde.py set-state --key refreshIntervalSeconds --value 60
-python widgets/kde/package/contents/code/usage_monitor_kde.py set-provider --provider claude --enabled true
-python widgets/kde/package/contents/code/usage_monitor_kde.py account-save --provider openai --name work --json '{"api_key":"sk-…"}'
-python widgets/kde/package/contents/code/usage_monitor_kde.py account-remove --provider openai --name work
-python widgets/kde/package/contents/code/usage_monitor_kde.py workspace-add --workspace wrk_… --name "My WS"
-python widgets/kde/package/contents/code/usage_monitor_kde.py workspace-remove --workspace wrk_…
+CODE=usage-monitor-cli/assets/kde/package/contents/code/usage_monitor_kde.py
+python "$CODE" summary
+python "$CODE" settings
+python "$CODE" cache
+python "$CODE" cache-clear
+python "$CODE" cost
+python "$CODE" set-state --key refreshIntervalSeconds --value 60
+python "$CODE" set-provider --provider claude --enabled true
+python "$CODE" account-save --provider openai --name work --json '{"api_key":"sk-…"}'
+python "$CODE" account-remove --provider openai --name work
+python "$CODE" workspace-add --workspace wrk_… --name "My WS"
+python "$CODE" workspace-remove --workspace wrk_…
 ```
 
 ## Troubleshooting
@@ -139,12 +160,12 @@ python widgets/kde/package/contents/code/usage_monitor_kde.py workspace-remove -
 - Stale panel data: open settings, **Clear cache**, then **Refresh**.
 - Toggle failures: run the equivalent CLI command in a terminal, e.g.
   `usage-monitor-cli claude account list`.
-- Old UI after upgrade: run `kpackagetool6 --upgrade` again and restart Plasma
-  if the old UI is still cached.
+- Old UI after upgrade: run `usage-monitor-cli widget install kde` again (it
+  upgrades in place) and restart Plasma if the old UI is still cached.
 
 ## Tests
 
 ```bash
 python -m unittest discover -s widgets/kde -p 'test_*.py'
-qmllint widgets/kde/package/contents/ui/*.qml
+qmllint usage-monitor-cli/assets/kde/package/contents/ui/*.qml
 ```

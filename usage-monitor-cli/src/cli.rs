@@ -1,5 +1,5 @@
-use clap::{Args, Parser, Subcommand};
-use usage_monitor_core::config::DEFAULT_ACCOUNT;
+use clap::{Args, Parser, Subcommand, ValueEnum};
+use usage_monitor_cli::config::DEFAULT_ACCOUNT;
 
 #[derive(Parser)]
 #[command(
@@ -55,6 +55,27 @@ pub(crate) enum Command {
 pub(crate) enum WidgetCmd {
     Waybar(WidgetTargetArgs),
     Kde(KdeWidgetArgs),
+    Install(WidgetInstallArgs),
+    Uninstall(WidgetInstallArgs),
+    /// Reinstall any already-installed widget whose version is older than this
+    /// binary. Wired into login autostart so upgrades apply automatically.
+    Sync,
+    Doctor,
+}
+
+#[derive(Args, Clone)]
+pub(crate) struct WidgetInstallArgs {
+    #[arg(value_enum)]
+    pub(crate) target: WidgetInstallTarget,
+    #[arg(long)]
+    pub(crate) force: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+pub(crate) enum WidgetInstallTarget {
+    Kde,
+    Waybar,
+    All,
 }
 
 #[derive(Args, Clone)]

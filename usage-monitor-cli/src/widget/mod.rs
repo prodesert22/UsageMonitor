@@ -1,8 +1,9 @@
 use anyhow::Result;
-use usage_monitor_core::provider::registry::ProviderRegistry;
+use usage_monitor_cli::provider::registry::ProviderRegistry;
 
 use crate::fetch::provider_context;
 
+pub(crate) mod install;
 mod model;
 mod payload;
 
@@ -10,7 +11,7 @@ pub(crate) use model::{WidgetProvider, WidgetSummary};
 
 pub(crate) async fn run_widget(
     registry: &ProviderRegistry,
-    config: &usage_monitor_core::config::AppConfig,
+    config: &usage_monitor_cli::config::AppConfig,
     args: crate::cli::WidgetTargetArgs,
     pretty: bool,
 ) -> Result<()> {
@@ -31,7 +32,7 @@ pub(crate) async fn run_widget(
 
 async fn widget_payload(
     registry: &ProviderRegistry,
-    config: &usage_monitor_core::config::AppConfig,
+    config: &usage_monitor_cli::config::AppConfig,
     provider: Option<&str>,
     account: Option<&str>,
 ) -> Result<WidgetSummary> {

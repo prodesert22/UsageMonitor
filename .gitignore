@@ -4,6 +4,7 @@ target/
 # Python test/runtime cache
 __pycache__/
 *.py[cod]
+.venv/
 
 # IDE
 .vscode/

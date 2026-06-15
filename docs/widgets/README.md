@@ -40,6 +40,31 @@ Provider entries currently include:
 
 Consumers should treat unknown extra fields as additive and ignore them.
 
+## Installing
+
+Both widgets are embedded in the CLI binary (asset tree under
+`usage-monitor-cli/assets/`) and written to disk by a single subcommand:
+
+```bash
+usage-monitor-cli widget install kde      # KDE plasmoid (via kpackagetool6)
+usage-monitor-cli widget install waybar   # Waybar wrapper into ~/.local/bin
+usage-monitor-cli widget install all      # both
+usage-monitor-cli widget uninstall <target>
+usage-monitor-cli widget doctor           # show resolved install paths
+```
+
+### Automatic upgrades
+
+`widget install` records the installed version
+(`~/.local/share/usage-monitor/<target>.version`) and drops an XDG autostart
+entry (`~/.config/autostart/usage-monitor-widget-sync.desktop`) that runs
+`usage-monitor-cli widget sync` at login. When you later upgrade the CLI (for
+example `cargo install usage-monitor-cli` to a newer version), the next login
+reinstalls any installed widget whose recorded version is older than the binary,
+so the desktop widgets stay in step without a manual reinstall. `widget sync`
+never installs a widget that was not already installed, and the autostart entry
+is removed once the last widget is uninstalled.
+
 ## Available widgets
 
 - [KDE Plasma 6](kde.md) — native panel widget with settings, toggles,

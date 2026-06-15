@@ -151,7 +151,12 @@ impl AntigravityProvider {
         client: &reqwest::Client,
     ) -> Result<(String, Option<String>), SpendPanelError> {
         for key in ["access_token", "token"] {
-            if let Some(value) = ctx.config.get(key).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            if let Some(value) = ctx
+                .config
+                .get(key)
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+            {
                 let project = ctx.config.get("project").filter(|v| !v.is_empty()).cloned();
                 return Ok((value.to_string(), project));
             }
@@ -200,7 +205,9 @@ impl AntigravityProvider {
                         .into(),
                 )
             })?;
-        let token = self.refresh_access_token(ctx, client, &creds, &refresh).await?;
+        let token = self
+            .refresh_access_token(ctx, client, &creds, &refresh)
+            .await?;
         Ok((token, project))
     }
 
@@ -216,14 +223,22 @@ impl AntigravityProvider {
             .get("client_id")
             .filter(|v| !v.is_empty())
             .cloned()
-            .or_else(|| std::env::var("ANTIGRAVITY_OAUTH_CLIENT_ID").ok().filter(|v| !v.is_empty()))
+            .or_else(|| {
+                std::env::var("ANTIGRAVITY_OAUTH_CLIENT_ID")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+            })
             .or_else(|| creds.client_id.clone());
         let client_secret = ctx
             .config
             .get("client_secret")
             .filter(|v| !v.is_empty())
             .cloned()
-            .or_else(|| std::env::var("ANTIGRAVITY_OAUTH_CLIENT_SECRET").ok().filter(|v| !v.is_empty()))
+            .or_else(|| {
+                std::env::var("ANTIGRAVITY_OAUTH_CLIENT_SECRET")
+                    .ok()
+                    .filter(|v| !v.is_empty())
+            })
             .or_else(|| creds.client_secret.clone());
 
         let (Some(client_id), Some(client_secret)) = (client_id, client_secret) else {
@@ -268,7 +283,11 @@ impl AntigravityProvider {
         access_token: &str,
         body: String,
     ) -> Result<(reqwest::StatusCode, String), SpendPanelError> {
-        let url = format!("{}/v1internal:{}", self.cloudcode_base().trim_end_matches('/'), endpoint);
+        let url = format!(
+            "{}/v1internal:{}",
+            self.cloudcode_base().trim_end_matches('/'),
+            endpoint
+        );
         let resp = client
             .post(url)
             .header("Authorization", format!("Bearer {}", access_token))
@@ -390,7 +409,11 @@ impl AntigravityProvider {
         let mut map: std::collections::BTreeMap<String, (Option<f64>, Option<String>)> =
             std::collections::BTreeMap::new();
         for bucket in buckets {
-            let Some(model_id) = bucket.model_id.as_deref().map(str::trim).filter(|s| !s.is_empty())
+            let Some(model_id) = bucket
+                .model_id
+                .as_deref()
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
             else {
                 continue;
             };
@@ -525,7 +548,10 @@ mod tests {
         let resp: FetchAvailableModelsResponse = serde_json::from_str(MODELS).unwrap();
         let quotas = AntigravityProvider::parse_models(&resp);
         assert_eq!(quotas.len(), 2);
-        let claude = quotas.iter().find(|q| q.model_id == "claude-sonnet").unwrap();
+        let claude = quotas
+            .iter()
+            .find(|q| q.model_id == "claude-sonnet")
+            .unwrap();
         assert_eq!(claude.label, "Claude Sonnet");
         assert_eq!(claude.percent_left(), 25.0);
     }
@@ -534,7 +560,10 @@ mod tests {
     fn test_parse_buckets_keeps_lowest() {
         let resp: RetrieveUserQuotaResponse = serde_json::from_str(BUCKETS).unwrap();
         let quotas = AntigravityProvider::parse_buckets(&resp);
-        let claude = quotas.iter().find(|q| q.model_id == "claude-sonnet").unwrap();
+        let claude = quotas
+            .iter()
+            .find(|q| q.model_id == "claude-sonnet")
+            .unwrap();
         assert_eq!(claude.remaining_fraction, Some(0.3));
     }
 

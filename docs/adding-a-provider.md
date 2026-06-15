@@ -1,16 +1,16 @@
 # Adding a provider
 
 Every provider is a self-contained module in
-`usage-monitor-core/src/provider/<id>.rs` that implements the `UsageProvider`
+`usage-monitor-cli/src/provider/<id>.rs` that implements the `UsageProvider`
 trait and maps the upstream response onto a `UsageSnapshot`. This guide walks
 through the established pattern.
 
 ## 1. Create the module
 
 Model it on an existing provider with a similar auth/shape — for example
-[`deepseek.rs`](../usage-monitor-core/src/provider/deepseek.rs) (API-key balance),
-[`cursor.rs`](../usage-monitor-core/src/provider/cursor.rs) (browser cookie), or
-[`windsurf.rs`](../usage-monitor-core/src/provider/windsurf.rs) (protobuf).
+[`deepseek.rs`](../usage-monitor-cli/src/provider/deepseek.rs) (API-key balance),
+[`cursor.rs`](../usage-monitor-cli/src/provider/cursor.rs) (browser cookie), or
+[`windsurf.rs`](../usage-monitor-cli/src/provider/windsurf.rs) (protobuf).
 
 A minimal HTTP/JSON provider:
 
@@ -101,10 +101,10 @@ impl UsageProvider for AcmeProvider {
 ## 2. Register it
 
 - Add `pub mod acme;` in
-  [`provider/mod.rs`](../usage-monitor-core/src/provider/mod.rs) (keep the list
+  [`provider/mod.rs`](../usage-monitor-cli/src/provider/mod.rs) (keep the list
   alphabetical).
 - Register it in `with_defaults()` in
-  [`provider/registry.rs`](../usage-monitor-core/src/provider/registry.rs):
+  [`provider/registry.rs`](../usage-monitor-cli/src/provider/registry.rs):
   ```rust
   reg.register(Box::new(super::acme::AcmeProvider::new()));
   ```
@@ -126,7 +126,7 @@ No CLI change is needed: the CLI dispatches provider config commands
   `credits`/`cost` for balances/spend, and `plan` for the subscription name.
 - **Percent vs. fraction**: confirm whether the upstream value is `0..1` or
   `0..100` before mapping — getting this wrong is the most common bug.
-- **Protobuf providers**: reuse [`provider/proto.rs`](../usage-monitor-core/src/provider/proto.rs)
+- **Protobuf providers**: reuse [`provider/proto.rs`](../usage-monitor-cli/src/provider/proto.rs)
   for the wire reader/encoder rather than pulling in a codegen dependency.
 
 ## 4. Tests
@@ -138,7 +138,7 @@ Add a `#[cfg(test)] mod tests` with:
   path and at least one `401` → `AuthFailed` case.
 
 ```bash
-cargo test -p usage-monitor-core -- provider::acme
+cargo test -p usage-monitor-cli -- provider::acme
 cargo test            # whole workspace
 cargo clippy          # keep it warning-clean
 ```

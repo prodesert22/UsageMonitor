@@ -34,7 +34,9 @@ fn scan_protobuf(data: &[u8], path: &[u32], depth: u8, order: &mut usize, scan: 
         field_path.push(field);
         match wire {
             WIRE_VARINT => {
-                let Some(v) = reader.read_varint() else { return };
+                let Some(v) = reader.read_varint() else {
+                    return;
+                };
                 scan.varint.push((field_path, v));
             }
             WIRE_FIXED64 => {
@@ -43,14 +45,19 @@ fn scan_protobuf(data: &[u8], path: &[u32], depth: u8, order: &mut usize, scan: 
                 }
             }
             WIRE_LEN => {
-                let Some(inner) = reader.read_len() else { return };
+                let Some(inner) = reader.read_len() else {
+                    return;
+                };
                 if depth < 4 {
                     scan_protobuf(inner, &field_path, depth + 1, order, scan);
                 }
             }
             WIRE_FIXED32 => {
-                let Some(bits) = reader.read_fixed32() else { return };
-                scan.fixed32.push((field_path, f32::from_bits(bits), *order));
+                let Some(bits) = reader.read_fixed32() else {
+                    return;
+                };
+                scan.fixed32
+                    .push((field_path, f32::from_bits(bits), *order));
                 *order += 1;
             }
             _ => return,
@@ -160,26 +167,42 @@ impl GrokProvider {
     }
 
     /// Resolves `(authorization, cookie)` — at least one is required.
-    fn resolve_auth(ctx: &ProviderContext) -> Result<(Option<String>, Option<String>), SpendPanelError> {
+    fn resolve_auth(
+        ctx: &ProviderContext,
+    ) -> Result<(Option<String>, Option<String>), SpendPanelError> {
         let token = ["token", "access_token", "api_key"]
             .iter()
-            .find_map(|k| ctx.config.get(*k).map(|v| Self::clean(v)).filter(|c| !c.is_empty()))
+            .find_map(|k| {
+                ctx.config
+                    .get(*k)
+                    .map(|v| Self::clean(v))
+                    .filter(|c| !c.is_empty())
+            })
             .or_else(|| {
-                ["GROK_TOKEN", "GROK_ACCESS_TOKEN"]
-                    .iter()
-                    .find_map(|e| std::env::var(e).ok().map(|v| Self::clean(&v)).filter(|c| !c.is_empty()))
+                ["GROK_TOKEN", "GROK_ACCESS_TOKEN"].iter().find_map(|e| {
+                    std::env::var(e)
+                        .ok()
+                        .map(|v| Self::clean(&v))
+                        .filter(|c| !c.is_empty())
+                })
             });
         let cookie = ctx
             .config
             .get("cookie")
             .map(|v| Self::clean(v))
             .filter(|c| !c.is_empty())
-            .or_else(|| std::env::var("GROK_COOKIE").ok().map(|v| Self::clean(&v)).filter(|c| !c.is_empty()));
+            .or_else(|| {
+                std::env::var("GROK_COOKIE")
+                    .ok()
+                    .map(|v| Self::clean(&v))
+                    .filter(|c| !c.is_empty())
+            });
 
         if token.is_none() && cookie.is_none() {
             return Err(SpendPanelError::AuthFailed(
                 "grok".into(),
-                "no Bearer token or cookie in config (token/cookie) or GROK_TOKEN/GROK_COOKIE".into(),
+                "no Bearer token or cookie in config (token/cookie) or GROK_TOKEN/GROK_COOKIE"
+                    .into(),
             ));
         }
         Ok((token.map(|t| format!("Bearer {}", t)), cookie))
@@ -193,7 +216,10 @@ impl GrokProvider {
     }
 
     /// Extracts the credit-usage percentage and reset from the protobuf payloads.
-    fn parse_payloads(payloads: &[&[u8]], now: DateTime<Utc>) -> Result<UsageSnapshot, SpendPanelError> {
+    fn parse_payloads(
+        payloads: &[&[u8]],
+        now: DateTime<Utc>,
+    ) -> Result<UsageSnapshot, SpendPanelError> {
         let mut scan = Scan::default();
         let mut order = 0usize;
         for payload in payloads {
@@ -208,11 +234,7 @@ impl GrokProvider {
             .filter(|(path, v, _)| {
                 path.last() == Some(&1) && v.is_finite() && *v >= 0.0 && *v <= 100.0
             })
-            .min_by(|a, b| {
-                a.0.len()
-                    .cmp(&b.0.len())
-                    .then(a.2.cmp(&b.2))
-            })
+            .min_by(|a, b| a.0.len().cmp(&b.0.len()).then(a.2.cmp(&b.2)))
             .map(|(_, v, _)| *v as f64);
 
         // Reset: a future unix-seconds varint, preferring path 1.5.1.
@@ -221,7 +243,11 @@ impl GrokProvider {
             .varint
             .iter()
             .filter(|(_, raw)| *raw >= 1_700_000_000 && *raw <= 2_100_000_000)
-            .filter_map(|(path, raw)| Utc.timestamp_opt(*raw as i64, 0).single().map(|d| (path, d)))
+            .filter_map(|(path, raw)| {
+                Utc.timestamp_opt(*raw as i64, 0)
+                    .single()
+                    .map(|d| (path, d))
+            })
             .filter(|(_, d)| d.timestamp() as u64 > now_ts)
             .collect();
         let preferred_reset = resets
@@ -234,15 +260,21 @@ impl GrokProvider {
         // A fresh billing period can report no usage yet (no float, but a reset
         // and a usage-period marker) — treat that as 0% used.
         let has_usage_period = scan.varint.iter().any(|(path, value)| {
-            path.starts_with(&[1, 6]) || (path.as_slice() == [1, 8, 1] && (*value == 1 || *value == 2))
+            path.starts_with(&[1, 6])
+                || (path.as_slice() == [1, 8, 1] && (*value == 1 || *value == 2))
         });
-        let no_usage_yet =
-            parsed_percent.is_none() && scan.fixed32.is_empty() && reset.is_some() && has_usage_period;
+        let no_usage_yet = parsed_percent.is_none()
+            && scan.fixed32.is_empty()
+            && reset.is_some()
+            && has_usage_period;
 
         let percent = parsed_percent
             .or(if no_usage_yet { Some(0.0) } else { None })
             .ok_or_else(|| {
-                SpendPanelError::ParseError("grok".into(), "no credit usage found in response".into())
+                SpendPanelError::ParseError(
+                    "grok".into(),
+                    "no credit usage found in response".into(),
+                )
             })?;
 
         let mut snapshot = UsageSnapshot::new("grok");
@@ -288,7 +320,11 @@ impl UsageProvider for GrokProvider {
     fn detect_credentials(&self) -> bool {
         ["GROK_TOKEN", "GROK_ACCESS_TOKEN", "GROK_COOKIE"]
             .iter()
-            .any(|e| std::env::var(e).map(|v| !v.trim().is_empty()).unwrap_or(false))
+            .any(|e| {
+                std::env::var(e)
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false)
+            })
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
@@ -463,7 +499,9 @@ mod tests {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path(ENDPOINT_PATH))
-            .respond_with(ResponseTemplate::new(200).set_body_raw(body, "application/grpc-web+proto"))
+            .respond_with(
+                ResponseTemplate::new(200).set_body_raw(body, "application/grpc-web+proto"),
+            )
             .mount(&server)
             .await;
         let provider = GrokProvider::with_base_url(&server.uri());

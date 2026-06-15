@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::Datelike;
-use usage_monitor_core::provider::registry::AccountTarget;
-use usage_monitor_core::{RateWindow, UsageSnapshot};
+use usage_monitor_cli::provider::registry::AccountTarget;
+use usage_monitor_cli::{RateWindow, UsageSnapshot};
 
 pub(crate) fn print_result(snapshot: &UsageSnapshot, json: bool) -> Result<()> {
     if json {

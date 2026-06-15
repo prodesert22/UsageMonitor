@@ -122,7 +122,12 @@ impl AbacusProvider {
         let used = (total - left).max(0.0);
 
         let mut snapshot = UsageSnapshot::new("abacus");
-        let mut window = RateWindow::new(used.round() as u64, total.round() as u64, "Compute points", 0);
+        let mut window = RateWindow::new(
+            used.round() as u64,
+            total.round() as u64,
+            "Compute points",
+            0,
+        );
         let resets = billing
             .and_then(|b| b.get("nextBillingDate"))
             .and_then(parse_date);
@@ -154,14 +159,20 @@ impl AbacusProvider {
 }
 
 fn num(v: &serde_json::Value, key: &str) -> Option<f64> {
-    v.get(key)
-        .and_then(|x| x.as_f64().or_else(|| x.as_str().and_then(|s| s.parse().ok())))
+    v.get(key).and_then(|x| {
+        x.as_f64()
+            .or_else(|| x.as_str().and_then(|s| s.parse().ok()))
+    })
 }
 
 fn parse_date(v: &serde_json::Value) -> Option<DateTime<Utc>> {
     if let Some(s) = v.as_str() {
         if let Ok(secs) = s.parse::<i64>() {
-            let secs = if secs > 1_000_000_000_000 { secs / 1000 } else { secs };
+            let secs = if secs > 1_000_000_000_000 {
+                secs / 1000
+            } else {
+                secs
+            };
             return chrono::TimeZone::timestamp_opt(&Utc, secs, 0).single();
         }
         return DateTime::parse_from_rfc3339(s)
@@ -169,7 +180,11 @@ fn parse_date(v: &serde_json::Value) -> Option<DateTime<Utc>> {
             .map(|d| d.with_timezone(&Utc));
     }
     if let Some(secs) = v.as_i64() {
-        let secs = if secs > 1_000_000_000_000 { secs / 1000 } else { secs };
+        let secs = if secs > 1_000_000_000_000 {
+            secs / 1000
+        } else {
+            secs
+        };
         return chrono::TimeZone::timestamp_opt(&Utc, secs, 0).single();
     }
     None
@@ -197,9 +212,12 @@ impl UsageProvider for AbacusProvider {
         let cookie = Self::resolve_cookie(ctx)?;
         let client = Self::build_client(ctx)?;
         let base = self.api_base().trim_end_matches('/');
-        let compute =
-            Self::get_json(&client, format!("{}/api/_getOrganizationComputePoints", base), &cookie)
-                .await?;
+        let compute = Self::get_json(
+            &client,
+            format!("{}/api/_getOrganizationComputePoints", base),
+            &cookie,
+        )
+        .await?;
         // Billing is optional — plan/reset are best-effort.
         let billing = Self::get_json(&client, format!("{}/api/_getBillingInfo", base), &cookie)
             .await
@@ -223,7 +241,8 @@ mod tests {
     #[test]
     fn test_snapshot_from_compute_and_billing() {
         let compute = serde_json::json!({"totalComputePoints": 1000, "computePointsLeft": 400});
-        let billing = serde_json::json!({"currentTier": "PRO", "nextBillingDate": "2026-07-01T00:00:00Z"});
+        let billing =
+            serde_json::json!({"currentTier": "PRO", "nextBillingDate": "2026-07-01T00:00:00Z"});
         let snap = AbacusProvider::snapshot_from(&compute, Some(&billing)).unwrap();
         let w = snap.primary_rate_window.unwrap();
         assert_eq!(w.used, Some(600));
@@ -265,10 +284,10 @@ mod tests {
             .await;
         Mock::given(method("GET"))
             .and(path("/api/_getBillingInfo"))
-            .respond_with(ResponseTemplate::new(200).set_body_raw(
-                r#"{"currentTier": "Free"}"#,
-                "application/json",
-            ))
+            .respond_with(
+                ResponseTemplate::new(200)
+                    .set_body_raw(r#"{"currentTier": "Free"}"#, "application/json"),
+            )
             .mount(&server)
             .await;
         let provider = AbacusProvider::with_base_url(&server.uri());

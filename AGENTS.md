@@ -8,11 +8,12 @@
 Usage Monitor is a Rust workspace that monitors AI provider usage from the
 terminal and Linux desktop widgets.
 
-- `usage-monitor-core` owns provider integrations, config, data models, and
-  fetch logic.
-- `usage-monitor-cli` exposes the command-line interface and widget JSON
-  payloads.
-- `widgets/` contains KDE Plasma 6 and Waybar integrations.
+- `usage-monitor-cli` is the only Rust package; it contains the command-line
+  interface, widget JSON payloads, provider integrations, config, data models,
+  fetch logic, and the embedded widget assets under
+  `usage-monitor-cli/assets/{kde,waybar}`.
+- `widgets/` contains the KDE Plasma 6 and Waybar widget unit tests, which load
+  the helpers from the CLI asset tree.
 - `docs/` and `releases/` are part of the product surface and must stay in sync
   with user-visible behavior.
 
@@ -29,9 +30,9 @@ terminal and Linux desktop widgets.
 ## Repository layout
 
 ```text
-usage-monitor-core/     Core library: models, providers, registry, config
-usage-monitor-cli/      Command-line interface
-widgets/                KDE Plasma and Waybar integrations
+usage-monitor-cli/      CLI package, internal library modules, embedded
+                        widget assets (assets/kde, assets/waybar)
+widgets/                KDE Plasma and Waybar widget unit tests
 docs/                   User/developer documentation
 releases/               Per-version release notes
 .githooks/              Versioned Git hooks
@@ -57,14 +58,19 @@ assets/                 Project artwork used by documentation/README
 3. **When changing user-visible behavior, update docs.** README, `docs/`,
    `CHANGELOG.md`, and `releases/` must match CLI/widget behavior.
 4. **Release bumps touch every version surface.** For a version bump, update:
-   `Cargo.toml`, `Cargo.lock`, `widgets/kde/package/metadata.json`,
-   `widgets/kde/package/contents/code/usage_monitor_kde.py`, `CHANGELOG.md`,
-   and `releases/vX.Y.Z.md`.
+   `Cargo.toml`, `Cargo.lock`,
+   `usage-monitor-cli/assets/kde/package/metadata.json`,
+   `usage-monitor-cli/assets/kde/package/contents/code/usage_monitor_kde.py`,
+   `CHANGELOG.md`, and `releases/vX.Y.Z.md`.
 5. **Provider auth stays explicit and safe.** Never log secrets, tokens, cookies,
    API keys, OAuth credentials, or raw auth files. Tests must use mock data.
-6. **KDE icon rule.** The plasmoid metadata/About/panel icon uses Plasma's
-   stock `utilities-system-monitor` icon unless packaging is changed to install a
-   real icon-theme asset. The project logo lives in `assets/` for docs/README.
+6. **KDE icon rule.** The panel bar and popup header render the bundled project
+   logo at
+   `usage-monitor-cli/assets/kde/package/contents/images/usage-monitor.png`
+   (a 256px copy of `assets/UsageMonitor.png`), referenced via `Qt.resolvedUrl`.
+   The `metadata.json` `Icon` field stays the stock `utilities-system-monitor`
+   theme name (the About page / widget chooser need a theme name, not a file
+   path). The full-resolution logo lives in `assets/` for docs/README.
 7. **Do not invent provider behavior.** If an API shape is unclear, add a focused
    parser test with representative JSON/protobuf/HTML before changing fetch
    logic.
@@ -89,9 +95,14 @@ python -m unittest discover -s widgets -p 'test_*.py'
 # Local quality gate
 .githooks/pre-commit
 
-# KDE development install/update
-kpackagetool6 --type Plasma/Applet --install widgets/kde/package
-kpackagetool6 --type Plasma/Applet --upgrade widgets/kde/package
+# Widget install/update (embedded assets)
+usage-monitor-cli widget install kde       # or: waybar / all
+usage-monitor-cli widget uninstall kde
+usage-monitor-cli widget doctor
+
+# KDE development install/update straight from the asset tree
+kpackagetool6 --type Plasma/Applet --install usage-monitor-cli/assets/kde/package
+kpackagetool6 --type Plasma/Applet --upgrade usage-monitor-cli/assets/kde/package
 ```
 
 ## Project-specific gotchas

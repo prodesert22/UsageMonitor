@@ -1,5 +1,5 @@
 use serde::Serialize;
-use usage_monitor_core::{RateWindow, RateWindowStatus, UsageSnapshot};
+use usage_monitor_cli::{RateWindow, RateWindowStatus, UsageSnapshot};
 
 #[derive(Debug, Serialize, PartialEq)]
 pub(crate) struct WidgetSummary {
@@ -107,7 +107,7 @@ impl WidgetProvider {
         super::payload::provider_from_snapshot(snapshot)
     }
     pub(crate) fn from_error(
-        target: &usage_monitor_core::provider::registry::AccountTarget,
+        target: &usage_monitor_cli::provider::registry::AccountTarget,
         error: String,
     ) -> Self {
         super::payload::provider_from_error(target, error)

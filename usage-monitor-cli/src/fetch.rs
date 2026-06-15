@@ -1,7 +1,7 @@
 use anyhow::Result;
-use usage_monitor_core::ProviderState;
-use usage_monitor_core::config::AppConfig;
-use usage_monitor_core::provider::registry::{AccountTarget, ProviderRegistry};
+use usage_monitor_cli::ProviderState;
+use usage_monitor_cli::config::AppConfig;
+use usage_monitor_cli::provider::registry::{AccountTarget, ProviderRegistry};
 
 use crate::output::{print_result, target_title};
 
@@ -64,8 +64,8 @@ pub(crate) fn provider_context(
     target: &AccountTarget,
     api_key: Option<&str>,
     credentials_path: Option<&str>,
-) -> usage_monitor_core::provider::ProviderContext {
-    let mut ctx = usage_monitor_core::provider::ProviderContext::new();
+) -> usage_monitor_cli::provider::ProviderContext {
+    let mut ctx = usage_monitor_cli::provider::ProviderContext::new();
     if let Some(account) = config.account(&target.provider_id, &target.account_id) {
         for (k, v) in &account.config {
             ctx.config.insert(k.clone(), v.clone());

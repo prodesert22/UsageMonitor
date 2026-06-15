@@ -117,7 +117,10 @@ impl CursorUsageSummary {
         if let Some(r) = plan.and_then(|p| ratio(p.used, p.limit)) {
             return r;
         }
-        let overall = self.individual_usage.as_ref().and_then(|u| u.overall.as_ref());
+        let overall = self
+            .individual_usage
+            .as_ref()
+            .and_then(|u| u.overall.as_ref());
         if let Some(r) = overall.and_then(|o| ratio(o.used, o.limit)) {
             return r;
         }
@@ -268,9 +271,8 @@ impl CursorProvider {
         let mut snapshot = UsageSnapshot::new("cursor");
 
         // Legacy request-based plan takes the headline window when present.
-        let legacy_window = legacy
-            .and_then(|r| r.gpt4.as_ref())
-            .and_then(|m| match (m.num_requests, m.max_request_usage) {
+        let legacy_window = legacy.and_then(|r| r.gpt4.as_ref()).and_then(|m| {
+            match (m.num_requests, m.max_request_usage) {
                 (Some(used), Some(limit)) if limit > 0 => Some(RateWindow::new(
                     used.max(0) as u64,
                     limit as u64,
@@ -278,13 +280,13 @@ impl CursorProvider {
                     0,
                 )),
                 _ => None,
-            });
+            }
+        });
 
         if let Some(window) = legacy_window {
             snapshot.primary_rate_window = Some(window);
         } else {
-            let mut window =
-                RateWindow::new(summary.plan_percent().round() as u64, 100, "Plan", 0);
+            let mut window = RateWindow::new(summary.plan_percent().round() as u64, 100, "Plan", 0);
             window.resets_at = parse_iso(&summary.billing_cycle_end);
             snapshot.primary_rate_window = Some(window);
         }
@@ -372,7 +374,11 @@ impl UsageProvider for CursorProvider {
             None => None,
         };
 
-        Ok(Self::snapshot_from(&summary, user.as_ref(), legacy.as_ref()))
+        Ok(Self::snapshot_from(
+            &summary,
+            user.as_ref(),
+            legacy.as_ref(),
+        ))
     }
 }
 

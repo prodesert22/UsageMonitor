@@ -193,10 +193,7 @@ impl UsageProvider for MistralProvider {
         let cookie = Self::resolve_cookie(ctx)?;
         let client = Self::build_client(ctx)?;
         let now = chrono::Utc::now();
-        let (month, year) = (
-            chrono::Datelike::month(&now),
-            chrono::Datelike::year(&now),
-        );
+        let (month, year) = (chrono::Datelike::month(&now), chrono::Datelike::year(&now));
         let url = format!(
             "{}/api/billing/v2/usage?month={}&year={}",
             self.api_base().trim_end_matches('/'),
@@ -291,7 +288,14 @@ mod tests {
           }}}
         }"#;
         // 100*0.01 + 4*0.5 = 1.0 + 2.0 = 3.0
-        assert_eq!(MistralProvider::parse(body).unwrap().cost.unwrap().total_cost, Some(3.0));
+        assert_eq!(
+            MistralProvider::parse(body)
+                .unwrap()
+                .cost
+                .unwrap()
+                .total_cost,
+            Some(3.0)
+        );
     }
 
     #[test]

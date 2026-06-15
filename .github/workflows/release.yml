@@ -1,0 +1,112 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Release tag to create/publish (e.g. v0.7.0)"
+        required: true
+        type: string
+
+env:
+  CARGO_TERM_COLOR: always
+  # Resolves to the dispatch input when run manually, else the pushed tag.
+  TAG: ${{ inputs.tag || github.ref_name }}
+
+jobs:
+  verify:
+    name: Verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate tag format
+        run: |
+          if ! printf '%s' "$TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$'; then
+            echo "::error::Tag '$TAG' must look like v1.2.3"
+            exit 1
+          fi
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Format check
+        run: cargo fmt -p usage-monitor-cli --check
+
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+
+      - name: Test
+        run: cargo test --workspace
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Ruff lint
+        run: |
+          python -m pip install --upgrade pip
+          pip install ruff
+          ruff check widgets
+
+      - name: Widget tests
+        run: python -m unittest discover -s widgets -p 'test_*.py'
+
+      - name: Tag matches crate version
+        run: |
+          tag_version="${TAG#v}"
+          crate_version="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          echo "tag=$tag_version crate=$crate_version"
+          if [ "$tag_version" != "$crate_version" ]; then
+            echo "::error::Tag $TAG does not match crate version $crate_version"
+            exit 1
+          fi
+
+      - name: Release notes exist
+        run: test -f "releases/${TAG}.md"
+
+  github-release:
+    name: GitHub release
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Creates the tag at the current commit if it does not exist yet
+          # (manual dispatch); reuses it on a tag push.
+          gh release create "$TAG" \
+            --title "$TAG" \
+            --notes-file "releases/${TAG}.md"
+
+  publish-crate:
+    name: Publish to crates.io
+    needs: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust stable
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Cargo dependencies
+        uses: Swatinem/rust-cache@v2
+
+      - name: Publish
+        env:
+          CARGO_REGISTRY_TOKEN: ${{ secrets.CARGO_REGISTRY_TOKEN }}
+        run: cargo publish -p usage-monitor-cli

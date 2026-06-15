@@ -8,8 +8,8 @@ mod widget;
 use anyhow::Result;
 use clap::Parser;
 use cli::{Cli, Command, OpencodeGoCmd, WidgetCmd};
-use usage_monitor_core::config::AppConfig;
-use usage_monitor_core::provider::registry::ProviderRegistry;
+use usage_monitor_cli::config::AppConfig;
+use usage_monitor_cli::provider::registry::ProviderRegistry;
 
 #[tokio::main]
 async fn main() -> Result<()> {
@@ -96,6 +96,10 @@ async fn main() -> Result<()> {
             WidgetCmd::Kde(args) => {
                 widget::run_widget(&registry, &config, args.target, args.pretty).await?
             }
+            WidgetCmd::Install(args) => widget::install::install(args.target, args.force)?,
+            WidgetCmd::Uninstall(args) => widget::install::uninstall(args.target)?,
+            WidgetCmd::Sync => widget::install::sync()?,
+            WidgetCmd::Doctor => widget::install::doctor()?,
         },
         Command::Provider(args) => dynamic::handle_dynamic_provider_cmd(&registry, config, args)?,
     }

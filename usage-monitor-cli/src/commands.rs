@@ -1,8 +1,8 @@
 use anyhow::Result;
-use usage_monitor_core::ProviderState;
-use usage_monitor_core::config::{AppConfig, DEFAULT_ACCOUNT};
-use usage_monitor_core::provider::opencode_go;
-use usage_monitor_core::provider::registry::ProviderRegistry;
+use usage_monitor_cli::ProviderState;
+use usage_monitor_cli::config::{AppConfig, DEFAULT_ACCOUNT};
+use usage_monitor_cli::provider::opencode_go;
+use usage_monitor_cli::provider::registry::ProviderRegistry;
 
 use crate::cli::{AccountCmd, ProviderCmd, WORKSPACE_PROVIDER, WorkspaceCmd};
 
@@ -291,7 +291,7 @@ fn print_account(config: &AppConfig, provider_id: &str, account: &str) {
     }
     if provider_id == WORKSPACE_PROVIDER {
         for entry in config.account_workspaces(provider_id, account) {
-            match usage_monitor_core::provider::opencode_go::parse_workspace_entry(entry) {
+            match usage_monitor_cli::provider::opencode_go::parse_workspace_entry(entry) {
                 Some(ws) => match &ws.name {
                     Some(name) => println!("  {:<28} {}", ws.id, name),
                     None => println!("  {}", ws.id),

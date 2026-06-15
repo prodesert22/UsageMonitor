@@ -229,7 +229,10 @@ impl PerplexityProvider {
         if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
             return Err(SpendPanelError::AuthFailed(
                 "perplexity".into(),
-                format!("invalid or expired session cookie (HTTP {})", status.as_u16()),
+                format!(
+                    "invalid or expired session cookie (HTTP {})",
+                    status.as_u16()
+                ),
             ));
         }
         if !status.is_success() {
@@ -375,8 +378,10 @@ mod tests {
     #[test]
     fn test_resolve_cookie_full_cookie_verbatim() {
         let mut ctx = ProviderContext::new();
-        ctx.config
-            .insert("cookie".into(), "__Secure-next-auth.session-token=abc".into());
+        ctx.config.insert(
+            "cookie".into(),
+            "__Secure-next-auth.session-token=abc".into(),
+        );
         assert_eq!(
             PerplexityProvider::resolve_cookie(&ctx).unwrap(),
             "__Secure-next-auth.session-token=abc"
@@ -468,7 +473,10 @@ mod tests {
           ]
         }"#;
         let snapshot = PerplexityProvider::snapshot_from_credits(parse(body, 1.0));
-        assert!(snapshot.primary_rate_window.is_none(), "no recurring → no primary");
+        assert!(
+            snapshot.primary_rate_window.is_none(),
+            "no recurring → no primary"
+        );
         assert!(snapshot.secondary_rate_window.is_some());
         assert!(snapshot.tertiary_rate_window.is_some());
         // renewal_date_ts 0 must not produce a 1970 reset.

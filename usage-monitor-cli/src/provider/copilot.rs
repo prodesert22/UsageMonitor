@@ -163,10 +163,7 @@ impl CopilotProvider {
         client: &reqwest::Client,
         token: &str,
     ) -> Result<CopilotUsageResponse, SpendPanelError> {
-        let url = format!(
-            "{}/copilot_internal/user",
-            base_url.trim_end_matches('/')
-        );
+        let url = format!("{}/copilot_internal/user", base_url.trim_end_matches('/'));
         let resp = client
             .get(url)
             .header("Authorization", format!("token {}", token))
@@ -280,7 +277,11 @@ impl UsageProvider for CopilotProvider {
     fn detect_credentials(&self) -> bool {
         ["COPILOT_API_TOKEN", "GITHUB_TOKEN", "GH_TOKEN"]
             .iter()
-            .any(|env| std::env::var(env).map(|v| !v.trim().is_empty()).unwrap_or(false))
+            .any(|env| {
+                std::env::var(env)
+                    .map(|v| !v.trim().is_empty())
+                    .unwrap_or(false)
+            })
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {

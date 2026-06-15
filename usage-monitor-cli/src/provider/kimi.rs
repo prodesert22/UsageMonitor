@@ -58,7 +58,11 @@ impl KimiUsageDetail {
     fn resets_at(&self) -> Option<DateTime<Utc>> {
         let raw = self.reset_time.as_deref()?;
         if let Ok(secs) = raw.parse::<i64>() {
-            let secs = if secs > 1_000_000_000_000 { secs / 1000 } else { secs };
+            let secs = if secs > 1_000_000_000_000 {
+                secs / 1000
+            } else {
+                secs
+            };
             return chrono::TimeZone::timestamp_opt(&Utc, secs, 0).single();
         }
         DateTime::parse_from_rfc3339(raw)
@@ -179,9 +183,11 @@ impl UsageProvider for KimiProvider {
     }
 
     fn detect_credentials(&self) -> bool {
-        ["KIMI_AUTH_TOKEN", "KIMI_API_KEY"]
-            .iter()
-            .any(|e| std::env::var(e).map(|v| !v.trim().is_empty()).unwrap_or(false))
+        ["KIMI_AUTH_TOKEN", "KIMI_API_KEY"].iter().any(|e| {
+            std::env::var(e)
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false)
+        })
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
@@ -277,7 +283,9 @@ mod tests {
     async fn test_fetch_success() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages"))
+            .and(path(
+                "/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages",
+            ))
             .respond_with(ResponseTemplate::new(200).set_body_raw(SAMPLE, "application/json"))
             .mount(&server)
             .await;
@@ -292,7 +300,9 @@ mod tests {
     async fn test_fetch_401() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
-            .and(path("/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages"))
+            .and(path(
+                "/apiv2/kimi.gateway.billing.v1.BillingService/GetUsages",
+            ))
             .respond_with(ResponseTemplate::new(401))
             .mount(&server)
             .await;

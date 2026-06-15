@@ -5,7 +5,40 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [0.6.1] — unreleased
+## [0.7.0] — unreleased
+
+Adds a built-in widget installer and folds the desktop widgets into the CLI
+crate so a single `cargo install` ships everything.
+
+### Added
+- `usage-monitor-cli widget install <kde|waybar|all>` installs the embedded
+  widgets: the KDE plasmoid via `kpackagetool6` (with a `--force` direct-copy
+  fallback) and the Waybar wrapper symlinked into `~/.local/bin`. Companion
+  `widget uninstall <target>` and `widget doctor` (prints resolved install
+  paths and tool availability) round out the workflow.
+- Automatic widget upgrades: `widget install` records the installed version and
+  adds a login autostart entry that runs the new `widget sync`, which reinstalls
+  any installed widget older than the CLI. Upgrading the binary now propagates to
+  the desktop widgets on the next login without a manual reinstall.
+
+### Changed
+- Merged the former `usage-monitor-core` crate into `usage-monitor-cli` as
+  internal library modules so crates.io publishing only needs the CLI package.
+- Widget sources now live in the CLI asset tree
+  (`usage-monitor-cli/assets/{kde,waybar}`) and are embedded in the binary; the
+  `widgets/` directory keeps only the Python unit tests, which load the helpers
+  from the asset tree.
+- Bumped the CLI workspace and KDE plasmoid version to `0.7.0`.
+
+### Fixed
+- The widget installer no longer copies `__pycache__`/`.pyc` files from the
+  asset tree into the installed KDE plasmoid or Waybar staging directory.
+- The KDE panel bar now shows the bundled Usage Monitor logo and scales it to the
+  panel thickness, so the icon is no longer clipped (and hidden) on thin panels.
+
+See [releases/v0.7.0.md](releases/v0.7.0.md).
+
+## [0.6.1]
 
 Polishes the project presentation and keeps the KDE plasmoid on Plasma's stock
 system-monitor icon.

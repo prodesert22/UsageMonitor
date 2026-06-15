@@ -1,3 +1,4 @@
+import importlib.util
 import json
 import os
 import subprocess
@@ -7,7 +8,21 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-import widgets.waybar.usage_monitor_waybar as waybar
+# The waybar helper now lives in the CLI asset tree (single source of truth,
+# embedded by the installer); load it directly from there.
+_ASSET_DIR = Path(__file__).resolve().parents[3] / "usage-monitor-cli" / "assets" / "waybar"
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location(
+        "usage_monitor_waybar", _ASSET_DIR / "usage_monitor_waybar.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+waybar = _load_module()
 
 
 class WaybarWrapperTests(unittest.TestCase):
@@ -41,7 +56,7 @@ class WaybarWrapperTests(unittest.TestCase):
                 self.assertEqual(payload["class"], "stale")
 
     def test_executable_runs_from_non_repo_cwd(self):
-        script = Path(__file__).resolve().parents[1] / "usage-monitor-waybar"
+        script = _ASSET_DIR / "usage-monitor-waybar"
         with tempfile.TemporaryDirectory() as td:
             proc = subprocess.run(
                 [sys.executable, str(script)],

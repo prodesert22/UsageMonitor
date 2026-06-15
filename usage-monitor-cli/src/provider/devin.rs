@@ -79,7 +79,12 @@ impl DevinProvider {
 
     fn resolve_org(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
         for key in ["organization", "org", "organization_id"] {
-            if let Some(v) = ctx.config.get(key).map(|s| s.trim()).filter(|s| !s.is_empty()) {
+            if let Some(v) = ctx
+                .config
+                .get(key)
+                .map(|s| s.trim())
+                .filter(|s| !s.is_empty())
+            {
                 let trimmed = v.trim_matches('/');
                 return Ok(trimmed.to_string());
             }
@@ -103,10 +108,20 @@ impl DevinProvider {
             .map_err(|e| SpendPanelError::NetworkError(e.to_string()))
     }
 
-    fn window(percent: Option<f64>, reset: Option<&serde_json::Value>, minutes: u32, label: &str) -> Option<RateWindow> {
+    fn window(
+        percent: Option<f64>,
+        reset: Option<&serde_json::Value>,
+        minutes: u32,
+        label: &str,
+    ) -> Option<RateWindow> {
         let p = percent?;
         let used = if p <= 1.0 { p * 100.0 } else { p };
-        let mut w = RateWindow::new(used.clamp(0.0, 100.0).round() as u64, 100, label.to_string(), minutes);
+        let mut w = RateWindow::new(
+            used.clamp(0.0, 100.0).round() as u64,
+            100,
+            label.to_string(),
+            minutes,
+        );
         w.resets_at = reset.and_then(parse_reset);
         Some(w)
     }
@@ -158,13 +173,18 @@ impl DevinProvider {
 }
 
 fn num(v: &serde_json::Value) -> Option<f64> {
-    v.as_f64().or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+    v.as_f64()
+        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
 }
 
 fn parse_reset(v: &serde_json::Value) -> Option<DateTime<Utc>> {
     if let Some(s) = v.as_str() {
         if let Ok(secs) = s.parse::<i64>() {
-            let secs = if secs > 1_000_000_000_000 { secs / 1000 } else { secs };
+            let secs = if secs > 1_000_000_000_000 {
+                secs / 1000
+            } else {
+                secs
+            };
             return chrono::TimeZone::timestamp_opt(&Utc, secs, 0).single();
         }
         return DateTime::parse_from_rfc3339(s)
@@ -172,7 +192,11 @@ fn parse_reset(v: &serde_json::Value) -> Option<DateTime<Utc>> {
             .map(|d| d.with_timezone(&Utc));
     }
     if let Some(secs) = v.as_i64() {
-        let secs = if secs > 1_000_000_000_000 { secs / 1000 } else { secs };
+        let secs = if secs > 1_000_000_000_000 {
+            secs / 1000
+        } else {
+            secs
+        };
         return chrono::TimeZone::timestamp_opt(&Utc, secs, 0).single();
     }
     None
@@ -191,9 +215,11 @@ impl UsageProvider for DevinProvider {
     }
 
     fn detect_credentials(&self) -> bool {
-        ["DEVIN_TOKEN", "DEVIN_API_TOKEN"]
-            .iter()
-            .any(|e| std::env::var(e).map(|v| !v.trim().is_empty()).unwrap_or(false))
+        ["DEVIN_TOKEN", "DEVIN_API_TOKEN"].iter().any(|e| {
+            std::env::var(e)
+                .map(|v| !v.trim().is_empty())
+                .unwrap_or(false)
+        })
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {

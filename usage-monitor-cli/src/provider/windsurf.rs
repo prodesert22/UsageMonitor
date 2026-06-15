@@ -141,16 +141,20 @@ impl WindsurfProvider {
                     status.plan_name = Self::decode_plan_name(inner);
                 }
                 (14, WIRE_VARINT) => {
-                    status.daily_remaining_percent = Some(reader.read_varint().ok_or_else(parse_err)? as i64);
+                    status.daily_remaining_percent =
+                        Some(reader.read_varint().ok_or_else(parse_err)? as i64);
                 }
                 (15, WIRE_VARINT) => {
-                    status.weekly_remaining_percent = Some(reader.read_varint().ok_or_else(parse_err)? as i64);
+                    status.weekly_remaining_percent =
+                        Some(reader.read_varint().ok_or_else(parse_err)? as i64);
                 }
                 (17, WIRE_VARINT) => {
-                    status.daily_reset_unix = Some(reader.read_varint().ok_or_else(parse_err)? as i64);
+                    status.daily_reset_unix =
+                        Some(reader.read_varint().ok_or_else(parse_err)? as i64);
                 }
                 (18, WIRE_VARINT) => {
-                    status.weekly_reset_unix = Some(reader.read_varint().ok_or_else(parse_err)? as i64);
+                    status.weekly_reset_unix =
+                        Some(reader.read_varint().ok_or_else(parse_err)? as i64);
                 }
                 _ => {
                     reader.skip(wire).ok_or_else(parse_err)?;
@@ -177,8 +181,9 @@ impl WindsurfProvider {
     }
 
     fn snapshot_from(status: &PlanStatus) -> Result<UsageSnapshot, SpendPanelError> {
-        let to_date =
-            |unix: Option<i64>| -> Option<DateTime<Utc>> { unix.and_then(|s| Utc.timestamp_opt(s, 0).single()) };
+        let to_date = |unix: Option<i64>| -> Option<DateTime<Utc>> {
+            unix.and_then(|s| Utc.timestamp_opt(s, 0).single())
+        };
 
         let mut snapshot = UsageSnapshot::new("windsurf");
 
@@ -286,7 +291,11 @@ impl UsageProvider for WindsurfProvider {
             let body = String::from_utf8_lossy(&bytes);
             return Err(SpendPanelError::ProviderError(
                 "windsurf".into(),
-                format!("HTTP {}: {}", status, body.chars().take(200).collect::<String>()),
+                format!(
+                    "HTTP {}: {}",
+                    status,
+                    body.chars().take(200).collect::<String>()
+                ),
             ));
         }
         let plan_status = Self::decode_response(&bytes)?;
@@ -360,7 +369,13 @@ mod tests {
         // 25% remaining → 75% used; 80% remaining → 20% used.
         assert_eq!(snap.primary_rate_window.as_ref().unwrap().used, Some(75));
         assert_eq!(snap.secondary_rate_window.as_ref().unwrap().used, Some(20));
-        assert!(snap.primary_rate_window.as_ref().unwrap().resets_at.is_some());
+        assert!(
+            snap.primary_rate_window
+                .as_ref()
+                .unwrap()
+                .resets_at
+                .is_some()
+        );
         assert_eq!(snap.plan.unwrap().name, "Pro");
     }
 
@@ -391,8 +406,7 @@ mod tests {
             .and(path(PATH))
             .and(header("x-auth-token", "sess"))
             .respond_with(
-                ResponseTemplate::new(200)
-                    .set_body_raw(sample_response(), "application/proto"),
+                ResponseTemplate::new(200).set_body_raw(sample_response(), "application/proto"),
             )
             .mount(&server)
             .await;

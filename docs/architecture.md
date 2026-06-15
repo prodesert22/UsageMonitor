@@ -1,18 +1,18 @@
 # Architecture
 
-Usage Monitor is a Cargo workspace with two crates:
+Usage Monitor is a Cargo workspace with one publishable Rust package:
 
 ```
-usage-monitor-core/     Library: data model, providers, registry, config, errors
-usage-monitor-cli/      Binary: argument parsing, output rendering, config I/O
+usage-monitor-cli/      CLI binary plus library modules for providers/config/model
 docs/                   This documentation, plus per-provider specs
 releases/               Per-version release notes
 ```
 
-The CLI is a thin shell over the core library: it parses arguments, loads the
-config, asks the registry to fetch, and renders the results. All provider logic,
-the data model, and configuration live in the library so they can be reused and
-unit-tested independently.
+The package has both a binary target and library modules. The binary parses
+arguments, loads config, asks the registry to fetch, and renders the results. All
+provider logic, the data model, and configuration live in library modules under
+`usage-monitor-cli/src/` so they can be reused internally and unit-tested
+independently while publishing only one crate.
 
 ## Data model (`model/`)
 
@@ -63,7 +63,7 @@ pub trait UsageProvider: Send + Sync {
 
 Providers are self-contained modules (`provider/<id>.rs`). Most are HTTP/JSON;
 two speak protobuf (`grok` over gRPC-Web, `windsurf` over Connect) and share the
-minimal wire reader in [`provider/proto.rs`](../usage-monitor-core/src/provider/proto.rs).
+minimal wire reader in [`provider/proto.rs`](../usage-monitor-cli/src/provider/proto.rs).
 Each provider exposes a `with_base_url` constructor so its tests can point at a
 mock HTTP server.
 

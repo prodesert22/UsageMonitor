@@ -1,14 +1,19 @@
 [workspace]
 resolver = "3"
 members = [
-    "usage-monitor-core",
     "usage-monitor-cli",
 ]
 
 [workspace.package]
-version = "0.6.1"
+version = "0.7.0"
 edition = "2024"
 license = "MIT"
+rust-version = "1.85"
+repository = "https://github.com/prodesert22/UsageMonitor"
+homepage = "https://github.com/prodesert22/UsageMonitor"
+readme = "README.md"
+keywords = ["ai", "usage", "monitor", "cli"]
+categories = ["command-line-utilities"]
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
@@ -26,3 +31,4 @@ futures-util = "0.3"
 wiremock = "0.6"
 pretty_assertions = "1"
 tokio-test = "0.4"
+tempfile = "3"

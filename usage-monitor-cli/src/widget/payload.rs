@@ -1,5 +1,5 @@
-use usage_monitor_core::provider::registry::{AccountTarget, ProviderRegistry};
-use usage_monitor_core::{RateWindow, UsageSnapshot};
+use usage_monitor_cli::provider::registry::{AccountTarget, ProviderRegistry};
+use usage_monitor_cli::{RateWindow, UsageSnapshot};
 
 use crate::output::fmt_reset;
 
@@ -7,7 +7,7 @@ use super::model::{WidgetProvider, WidgetWindow};
 
 pub(super) fn widget_targets(
     registry: &ProviderRegistry,
-    config: &usage_monitor_core::config::AppConfig,
+    config: &usage_monitor_cli::config::AppConfig,
     provider: Option<&str>,
 ) -> anyhow::Result<Vec<AccountTarget>> {
     let targets = match provider {
@@ -16,7 +16,7 @@ pub(super) fn widget_targets(
                 anyhow::bail!("unknown provider '{}'", id);
             }
             if registry.provider_state(id, config)
-                == Some(usage_monitor_core::ProviderState::Disabled)
+                == Some(usage_monitor_cli::ProviderState::Disabled)
             {
                 anyhow::bail!(
                     "provider '{}' is disabled; enable it with `usage-monitor-cli enable {}`",

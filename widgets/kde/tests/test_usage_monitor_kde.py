@@ -1,13 +1,41 @@
+import importlib.util
 import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from pathlib import Path
 from typing import ClassVar
 from types import SimpleNamespace
 from unittest import mock
 
-from widgets.kde.package.contents.code import usage_monitor_kde as um
+# The KDE helper now lives in the CLI asset tree (single source of truth,
+# embedded by the installer); load it directly from there.
+_KDE_CODE = (
+    Path(__file__).resolve().parents[3]
+    / "usage-monitor-cli"
+    / "assets"
+    / "kde"
+    / "package"
+    / "contents"
+    / "code"
+)
+
+
+def _load_module():
+    spec = importlib.util.spec_from_file_location(
+        "usage_monitor_kde", _KDE_CODE / "usage_monitor_kde.py"
+    )
+    module = importlib.util.module_from_spec(spec)
+    # Register before exec so dataclasses can resolve string annotations
+    # (`from __future__ import annotations`) via sys.modules.
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return module
+
+
+um = _load_module()
 
 
 def proc(stdout="", returncode=0, stderr=""):

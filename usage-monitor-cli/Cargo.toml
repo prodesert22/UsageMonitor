@@ -3,13 +3,32 @@ name = "usage-monitor-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
+rust-version.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+description = "CLI and Linux widgets payload generator for monitoring AI provider usage"
 
 [dependencies]
-usage-monitor-core = { path = "../usage-monitor-core" }
 serde.workspace = true
 serde_json.workspace = true
+reqwest.workspace = true
 tokio.workspace = true
 chrono.workspace = true
+thiserror.workspace = true
 tracing.workspace = true
+toml.workspace = true
+url.workspace = true
+futures-util.workspace = true
 clap = { version = "4", features = ["derive"] }
 anyhow = "1"
+async-trait = "0.1"
+include_dir = "0.7"
+
+[dev-dependencies]
+wiremock.workspace = true
+pretty_assertions.workspace = true
+tokio-test.workspace = true
+tempfile.workspace = true
