@@ -6,6 +6,7 @@ as a Rust library + CLI for monitoring AI service usage from the terminal.
 ## Guides
 
 - [Installation](installation.md) — build from source, install, prerequisites, PATH.
+- [Commands & usage](commands.md) — full CLI command reference and examples.
 - [Architecture](architecture.md) — workspace layout, data model, provider trait,
   registry, fetch flow, configuration, and error model.
 - [Configuration](configuration.md) — the `config.toml` format, accounts,
