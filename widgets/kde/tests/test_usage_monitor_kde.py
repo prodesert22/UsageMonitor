@@ -53,7 +53,7 @@ WIDGET_PAYLOAD = {
             "display_name": "Codex",
             "max_percentage": 80,
             "windows": [
-                {"id": "primary", "label": "Session", "percentage": 80, "resets_at": "resets at 14:00"},
+                {"id": "primary", "label": "Session", "percentage": 80, "resets_at": "Resets at 14:00"},
                 {"id": "secondary", "label": "Weekly", "percentage": 30},
             ],
         },
@@ -105,7 +105,7 @@ class FetchTests(unittest.TestCase):
         codex = entries[0]
         self.assertEqual(codex["provider"], "codex")
         self.assertEqual(codex["usage"]["primary"]["usedPercent"], 80.0)
-        self.assertEqual(codex["usage"]["primary"]["resetDescription"], "resets at 14:00")
+        self.assertEqual(codex["usage"]["primary"]["resetDescription"], "Resets at 14:00")
         claude = entries[1]
         self.assertEqual(claude["usage"]["identity"]["accountEmail"], "Work")
         self.assertEqual(claude["usage"]["identity"]["accountOrganization"], "Claude Pro")

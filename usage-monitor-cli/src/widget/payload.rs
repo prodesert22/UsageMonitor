@@ -144,8 +144,16 @@ pub(super) fn window_from_rate(id: String, window: &RateWindow) -> WidgetWindow 
         used: window.used,
         limit: window.limit,
         remaining: window.remaining,
-        resets_at: window.resets_at.map(fmt_reset),
+        resets_at: window.resets_at.map(widget_reset_description),
     }
+}
+
+fn widget_reset_description(value: chrono::DateTime<chrono::Utc>) -> String {
+    let text = fmt_reset(value);
+    let Some(first) = text.get(0..1) else {
+        return text;
+    };
+    format!("{}{}", first.to_uppercase(), &text[1..])
 }
 
 pub(super) fn ratio_percentage(ratio: f64) -> u8 {

@@ -61,12 +61,17 @@ fn test_widget_tooltip_does_not_duplicate_reset_word() {
     window.resets_at = Some(chrono::Utc::now() + chrono::Duration::seconds(30));
     snap.primary_rate_window = Some(window);
     let payload = WidgetSummary::from_providers(vec![WidgetProvider::from_snapshot(&snap)]);
+    let reset = payload.providers[0].windows[0]
+        .resets_at
+        .as_deref()
+        .unwrap();
+    assert!(reset.starts_with("Resets "), "got: {reset}");
     let tooltip = &payload.providers[0].tooltip_line();
     assert!(
-        tooltip.contains("resets at")
-            || tooltip.contains("resets tomorrow at")
-            || tooltip.contains("resets yesterday at")
-            || tooltip.contains("resets "),
+        tooltip.contains("Resets at")
+            || tooltip.contains("Resets tomorrow at")
+            || tooltip.contains("Resets yesterday at")
+            || tooltip.contains("Resets "),
         "got: {}",
         tooltip
     );
