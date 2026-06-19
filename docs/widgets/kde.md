@@ -55,8 +55,10 @@ Then install the plasmoid:
 usage-monitor-cli widget install kde
 ```
 
-This stages the package under `~/.local/share/usage-monitor/kde/package` and
-registers it with `kpackagetool6` (`--install` or `--upgrade` automatically). If
+This stages the package under `~/.local/share/usage-monitor/kde/package`,
+installs the project icon as
+`~/.local/share/icons/hicolor/256x256/apps/usage-monitor.png`, and registers the
+plasmoid with `kpackagetool6` (`--install` or `--upgrade` automatically). If
 `kpackagetool6` is missing or fails, re-run with `--force` to copy the package
 straight into `~/.local/share/plasma/plasmoids/dev.usage-monitor.kde`. Remove it
 with `usage-monitor-cli widget uninstall kde`, and inspect resolved paths with

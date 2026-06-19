@@ -9,11 +9,11 @@
     "BugReportUrl": "https://github.com/prodesert22/UsageMonitor/issues",
     "Category": "System Information",
     "Description": "Monitor AI provider usage (Claude, Codex, OpenAI, OpenCode Go and more) from the KDE Plasma panel, backed by the usage-monitor-cli.",
-    "Icon": "utilities-system-monitor",
+    "Icon": "usage-monitor",
     "Id": "dev.usage-monitor.kde",
     "License": "MIT",
     "Name": "Usage Monitor",
-    "Version": "0.7.0",
+    "Version": "0.7.1",
     "Website": "https://github.com/prodesert22/UsageMonitor"
   },
   "KPackageStructure": "Plasma/Applet",

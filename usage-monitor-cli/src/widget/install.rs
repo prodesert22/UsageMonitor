@@ -9,6 +9,8 @@ use include_dir::{Dir, include_dir};
 use crate::cli::WidgetInstallTarget;
 
 const KDE_ID: &str = "dev.usage-monitor.kde";
+const KDE_ICON_NAME: &str = "usage-monitor";
+const KDE_ICON_SOURCE: &str = "contents/images/usage-monitor.png";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const TARGETS: [&str; 2] = ["kde", "waybar"];
 static KDE_PACKAGE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/kde/package");
@@ -98,6 +100,7 @@ pub(crate) fn doctor() -> Result<()> {
         find_command("kpackagetool6").map_or("missing".to_string(), |p| p.display().to_string())
     );
     println!("KDE plasmoid: {}", kde_plasmoid_dir()?.display());
+    println!("KDE icon: {}", kde_icon_path()?.display());
     println!("Waybar wrapper: {}", waybar_bin_path()?.display());
     for target in TARGETS {
         println!(
@@ -112,6 +115,7 @@ pub(crate) fn doctor() -> Result<()> {
 fn install_kde(force: bool) -> Result<()> {
     let stage = data_home()?.join("usage-monitor/kde/package");
     write_dir(&KDE_PACKAGE, &stage, true)?;
+    install_kde_icon(&stage)?;
 
     if let Some(tool) = find_command("kpackagetool6") {
         let mode = if kde_plasmoid_dir()?.exists() {
@@ -125,6 +129,7 @@ fn install_kde(force: bool) -> Result<()> {
             .output()
             .with_context(|| format!("failed to run {}", tool.display()))?;
         if output.status.success() {
+            refresh_kde_icon_cache();
             println!("KDE widget installed with {}", tool.display());
             return Ok(());
         }
@@ -138,6 +143,7 @@ fn install_kde(force: bool) -> Result<()> {
 
     let target = kde_plasmoid_dir()?;
     write_dir(&KDE_PACKAGE, &target, true)?;
+    refresh_kde_icon_cache();
     println!("KDE widget installed at {}", target.display());
     println!("Restart Plasma or re-add the widget if the old UI is cached.");
     Ok(())
@@ -180,7 +186,20 @@ fn uninstall_kde() -> Result<()> {
     }
     remove_dir_if_exists(&kde_plasmoid_dir()?)?;
     remove_dir_if_exists(&data_home()?.join("usage-monitor/kde"))?;
+    remove_file_if_exists(&kde_icon_path()?)?;
+    refresh_kde_icon_cache();
     println!("KDE widget removed");
+    Ok(())
+}
+
+fn install_kde_icon(package_dir: &Path) -> Result<()> {
+    let source = package_dir.join(KDE_ICON_SOURCE);
+    let dest = kde_icon_path()?;
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    fs::copy(&source, &dest)
+        .with_context(|| format!("copy {} to {}", source.display(), dest.display()))?;
     Ok(())
 }
 
@@ -247,6 +266,10 @@ fn home_dir() -> Result<PathBuf> {
 
 fn kde_plasmoid_dir() -> Result<PathBuf> {
     Ok(data_home()?.join(format!("plasma/plasmoids/{KDE_ID}")))
+}
+
+fn kde_icon_path() -> Result<PathBuf> {
+    Ok(data_home()?.join(format!("icons/hicolor/256x256/apps/{KDE_ICON_NAME}.png")))
 }
 
 fn waybar_bin_path() -> Result<PathBuf> {
@@ -335,6 +358,20 @@ fn find_command(name: &str) -> Option<PathBuf> {
         .find(|candidate| candidate.is_file())
 }
 
+fn refresh_kde_icon_cache() {
+    if let Ok(data_home) = data_home() {
+        if let Some(tool) = find_command("gtk-update-icon-cache") {
+            let _ = Command::new(&tool)
+                .arg("-q")
+                .arg(data_home.join("icons/hicolor"))
+                .status();
+        }
+    }
+    if let Some(tool) = find_command("kbuildsycoca6") {
+        let _ = Command::new(&tool).arg("--noincremental").status();
+    }
+}
+
 fn remove_dir_if_exists(path: &Path) -> Result<()> {
     if path.exists() {
         fs::remove_dir_all(path).with_context(|| format!("remove {}", path.display()))?;
@@ -418,6 +455,34 @@ mod tests {
             no_python_cache(&dest),
             "install tree must not contain Python bytecode caches"
         );
+    }
+
+    #[test]
+    fn kde_metadata_uses_project_icon_name() {
+        let metadata = KDE_PACKAGE
+            .get_file("metadata.json")
+            .and_then(|file| std::str::from_utf8(file.contents()).ok())
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(metadata).unwrap();
+        assert_eq!(value["KPlugin"]["Icon"], KDE_ICON_NAME);
+    }
+
+    #[test]
+    fn install_kde_icon_copies_project_logo_to_hicolor() {
+        with_temp_home(|_| {
+            let tmp = tempfile::tempdir().unwrap();
+            let package = tmp.path().join("package");
+            write_dir(&KDE_PACKAGE, &package, true).unwrap();
+
+            install_kde_icon(&package).unwrap();
+
+            let icon = kde_icon_path().unwrap();
+            assert!(icon.is_file(), "icon should be installed at hicolor path");
+            assert_eq!(
+                fs::read(icon).unwrap(),
+                fs::read(package.join(KDE_ICON_SOURCE)).unwrap()
+            );
+        });
     }
 
     #[cfg(unix)]

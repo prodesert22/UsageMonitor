@@ -68,9 +68,11 @@ assets/                 Project artwork used by documentation/README
    logo at
    `usage-monitor-cli/assets/kde/package/contents/images/usage-monitor.png`
    (a 256px copy of `assets/UsageMonitor.png`), referenced via `Qt.resolvedUrl`.
-   The `metadata.json` `Icon` field stays the stock `utilities-system-monitor`
-   theme name (the About page / widget chooser need a theme name, not a file
-   path). The full-resolution logo lives in `assets/` for docs/README.
+   The `metadata.json` `Icon` field uses the `usage-monitor` theme icon name;
+   the installer copies the bundled PNG to
+   `$XDG_DATA_HOME/icons/hicolor/256x256/apps/usage-monitor.png` and refreshes
+   KDE icon caches so the About page / widget chooser show the project icon.
+   The full-resolution logo lives in `assets/` for docs/README.
 7. **Do not invent provider behavior.** If an API shape is unclear, add a focused
    parser test with representative JSON/protobuf/HTML before changing fetch
    logic.

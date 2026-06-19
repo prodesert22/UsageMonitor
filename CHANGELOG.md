@@ -5,7 +5,25 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [0.7.0] — unreleased
+## [0.7.1] — unreleased
+
+Fixes KDE widget presentation details found after the 0.7.0 widget installer
+work.
+
+### Changed
+- Bumped the CLI workspace and KDE plasmoid version to `0.7.1`.
+
+### Fixed
+- Widget reset descriptions are now capitalized at the Rust payload layer (for
+  example, `Resets at HH:MM`), so the KDE UI no longer renders duplicate text
+  like `Resets: resets ...`.
+- The KDE widget installer now registers the Usage Monitor icon in the user
+  hicolor theme and the plasmoid metadata references it, so Plasma's widget
+  chooser shows the project icon instead of the stock monitor icon.
+
+See [releases/v0.7.1.md](releases/v0.7.1.md).
+
+## [0.7.0]
 
 Adds a built-in widget installer and folds the desktop widgets into the CLI
 crate so a single `cargo install` ships everything.
