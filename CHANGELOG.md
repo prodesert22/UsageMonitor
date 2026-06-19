@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [0.7.1] — unreleased
+## [0.7.1]
 
 Fixes KDE widget presentation details found after the 0.7.0 widget installer
 work.
