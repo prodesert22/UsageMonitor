@@ -6,8 +6,8 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
-from typing import ClassVar
 from types import SimpleNamespace
+from typing import ClassVar
 from unittest import mock
 
 # The KDE helper now lives in the CLI asset tree (single source of truth,
@@ -87,16 +87,14 @@ class BinaryTests(unittest.TestCase):
 
 class StateTests(unittest.TestCase):
     def test_state_roundtrip(self):
-        with tempfile.TemporaryDirectory() as td:
-            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
-                um._write_state({"barProvider": "codex"})
-                self.assertEqual(um.state_value(key="barProvider"), "codex")
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
+            um._write_state({"barProvider": "codex"})
+            self.assertEqual(um.state_value(key="barProvider"), "codex")
 
     def test_provider_order_parses_json_string(self):
-        with tempfile.TemporaryDirectory() as td:
-            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
-                um._write_state({"providerOrder": '["claude","codex"]'})
-                self.assertEqual(um._provider_order(), ["claude", "codex"])
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
+            um._write_state({"providerOrder": '["claude","codex"]'})
+            self.assertEqual(um._provider_order(), ["claude", "codex"])
 
 
 class FetchTests(unittest.TestCase):
@@ -150,11 +148,10 @@ class SummaryTests(unittest.TestCase):
 
     def test_summarize_orders_by_state(self):
         entries = um.fetch_entries(runner=lambda args: proc(json.dumps(WIDGET_PAYLOAD)))
-        with tempfile.TemporaryDirectory() as td:
-            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
-                um._write_state({"providerOrder": '["claude","codex"]'})
-                payload = um.summarize(entries, pinned_provider="")
-                self.assertEqual(payload["providers"][0]["provider"], "claude")
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
+            um._write_state({"providerOrder": '["claude","codex"]'})
+            payload = um.summarize(entries, pinned_provider="")
+            self.assertEqual(payload["providers"][0]["provider"], "claude")
 
 
 class SettingsTests(unittest.TestCase):
@@ -175,27 +172,26 @@ class SettingsTests(unittest.TestCase):
         return self.SHOWS.get(tuple(args), "")
 
     def test_settings_payload_shape(self):
-        with tempfile.TemporaryDirectory() as td:
-            with mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
-                um._write_state({"refreshIntervalSeconds": 45, "barProvider": "codex", "providerOrder": '["codex"]'})
-                with mock.patch.object(um, "cli_output", side_effect=self.fake_output), \
-                     mock.patch.object(um, "cli_version", return_value="0.6.0"):
-                    payload = um.settings_payload()
-                    self.assertEqual(payload["refreshIntervalSeconds"], 45)
-                    self.assertEqual(payload["pinnedProvider"], "codex")
-                    self.assertEqual(payload["providerOrder"], '["codex"]')
-                    self.assertEqual(payload["cliVersion"], "0.6.0")
-                    codex = payload["providers"][0]
-                    self.assertEqual(codex["id"], "codex")
-                    self.assertTrue(codex["enabled"])
-                    self.assertEqual(codex["availableSources"], ["auto"])
-                    ids = [a["id"] for a in codex["accounts"]]
-                    self.assertIn("default", ids)
-                    self.assertIn("work", ids)
-                    work = next(a for a in codex["accounts"] if a["id"] == "work")
-                    self.assertEqual(work["active"], "false")
-                    self.assertEqual([p["id"] for p in payload["pinnableProviders"]], ["codex"])
-                    self.assertIn("connectHint", codex)
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
+            um._write_state({"refreshIntervalSeconds": 45, "barProvider": "codex", "providerOrder": '["codex"]'})
+            with mock.patch.object(um, "cli_output", side_effect=self.fake_output), \
+                 mock.patch.object(um, "cli_version", return_value="0.6.0"):
+                payload = um.settings_payload()
+                self.assertEqual(payload["refreshIntervalSeconds"], 45)
+                self.assertEqual(payload["pinnedProvider"], "codex")
+                self.assertEqual(payload["providerOrder"], '["codex"]')
+                self.assertEqual(payload["cliVersion"], "0.6.0")
+                codex = payload["providers"][0]
+                self.assertEqual(codex["id"], "codex")
+                self.assertTrue(codex["enabled"])
+                self.assertEqual(codex["availableSources"], ["auto"])
+                ids = [a["id"] for a in codex["accounts"]]
+                self.assertIn("default", ids)
+                self.assertIn("work", ids)
+                work = next(a for a in codex["accounts"] if a["id"] == "work")
+                self.assertEqual(work["active"], "false")
+                self.assertEqual([p["id"] for p in payload["pinnableProviders"]], ["codex"])
+                self.assertIn("connectHint", codex)
 
 
 class CommandTests(unittest.TestCase):
@@ -214,8 +210,7 @@ class CommandTests(unittest.TestCase):
             self.assertEqual(run.call_args.args[0], ["disable", "claude"])
 
     def test_cache_fallback_stale(self):
-        with tempfile.TemporaryDirectory() as td:
-            with mock.patch.dict(os.environ, {"XDG_CACHE_HOME": td, "XDG_CONFIG_HOME": td}, clear=True):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CACHE_HOME": td, "XDG_CONFIG_HOME": td}, clear=True):
                 um.write_json(um.paths().last_good, [
                     {"provider": "codex", "displayName": "Codex", "usage": {"primary": {"usedPercent": 5}}}
                 ])

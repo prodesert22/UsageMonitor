@@ -27,9 +27,8 @@ waybar = _load_module()
 
 class WaybarWrapperTests(unittest.TestCase):
     def test_fallback_when_binary_missing(self):
-        with mock.patch.dict(os.environ, {}, clear=True):
-            with mock.patch.object(waybar.shutil, "which", return_value=None):
-                self.assertIsNone(waybar.find_binary())
+        with mock.patch.dict(os.environ, {}, clear=True), mock.patch.object(waybar.shutil, "which", return_value=None):
+            self.assertIsNone(waybar.find_binary())
 
     def test_fallback_payload_shape(self):
         payload = waybar.fallback()
@@ -50,10 +49,9 @@ class WaybarWrapperTests(unittest.TestCase):
                 self.assertEqual(payload["class"], "stale")
 
     def test_run_falls_back_on_subprocess_exception(self):
-        with mock.patch.dict(os.environ, {"USAGE_MONITOR_BIN": "/bin/usage-monitor-cli"}, clear=True):
-            with mock.patch.object(waybar.subprocess, "run", side_effect=subprocess.TimeoutExpired("cmd", 1)):
-                payload = json.loads(waybar.run())
-                self.assertEqual(payload["class"], "stale")
+        with mock.patch.dict(os.environ, {"USAGE_MONITOR_BIN": "/bin/usage-monitor-cli"}, clear=True), mock.patch.object(waybar.subprocess, "run", side_effect=subprocess.TimeoutExpired("cmd", 1)):
+            payload = json.loads(waybar.run())
+            self.assertEqual(payload["class"], "stale")
 
     def test_executable_runs_from_non_repo_cwd(self):
         script = _ASSET_DIR / "usage-monitor-waybar"
