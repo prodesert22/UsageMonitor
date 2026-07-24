@@ -183,6 +183,7 @@ fn provider_display_name(provider_id: &str) -> String {
         "abacus" => "Abacus".into(),
         "minimax" => "MiniMax".into(),
         "kimik2" => "Kimi K2".into(),
+        "kimi" => "Kimi".into(),
         "zai" => "Z.ai".into(),
         "elevenlabs" => "ElevenLabs".into(),
         "mistral" => "Mistral".into(),

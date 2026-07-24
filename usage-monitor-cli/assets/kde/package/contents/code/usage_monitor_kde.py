@@ -44,6 +44,7 @@ PROVIDER_NAMES = {
     "abacus": "Abacus",
     "minimax": "MiniMax",
     "kimik2": "Kimi K2",
+    "kimi": "Kimi",
     "zai": "Z.ai",
     "elevenlabs": "ElevenLabs",
     "mistral": "Mistral",
@@ -59,6 +60,7 @@ CONNECT_HINTS = {
     "openai": "Set an API key: `usage-monitor-cli openai set api_key sk-…`.",
     "gemini": "Run `gcloud auth application-default login`, then refresh.",
     "opencode-go": "Configure workspaces: `usage-monitor-cli opencode-go workspace add <id>`.",
+    "kimi": "Set a kimi-auth token: `usage-monitor-cli kimi set token <kimi-auth-jwt>`.",
 }
 
 # --------------------------------------------------------------------------

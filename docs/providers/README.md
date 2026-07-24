@@ -55,18 +55,158 @@ Two pairs cover the same vendor through different doors:
 
 Every provider supports named accounts, so the same service can be monitored
 for several logins or keys. The full command reference lives in the
-[main README](../../README.md#multiple-accounts); each provider page shows a
+[commands doc](../commands.md#multiple-accounts) and the
+[configuration doc](../configuration.md#accounts); each provider page shows a
 concrete example.
 
-How hard it is depends on the auth type:
+### Auth types and their multi-account strategy
 
-- **API-key / cookie providers** (`anthropic`, `openai`, `opencode-go`, and most
-  others) — trivial. Keys and cookies don't rotate on use, so adding an account
-  is just one more `account set api_key` / `account set token`. For
-  `opencode-go`, remember workspaces are per account: pass `--account <name>`
-  when adding one.
-- **OAuth providers** (`claude`, `codex`) — need care. Their tokens rotate and
-  are session-bound, so you **cannot copy a credentials file** between accounts.
-  Each account needs its own live login in its own config directory
-  (`CODEX_HOME` for codex, a separate `HOME`/`~/.claude` for claude). See
-  [codex → Why copying a token fails](codex.md#why-copying-a-token-fails).
+| Auth type | Providers | Strategy |
+|-----------|-----------|----------|
+| **API key** | `anthropic`, `openai`, `openrouter`, `deepseek`, `deepgram`, `elevenlabs`, `groq`, `llmproxy`, `moonshot`, `venice`, `kimik2`, `minimax`, `zai` | Keys don't rotate — just add another `account set api_key` |
+| **Token / cookie** | `grok`, `kimi`, `copilot`, `windsurf`, `abacus`, `mistral`, `devin`, `cursor`, `perplexity`, `ollama` | Tokens/cookies don't rotate — just add another `account set token` or `account set cookie` |
+| **OAuth (credentials file)** | `claude`, `codex`, `gemini`, `antigravity` | Tokens **rotate** — each account needs its own live login in an isolated directory |
+| **Manual config** | `opencode-go` | Token doesn't rotate, but workspaces are per-account |
+
+### API-key and token/cookie providers (most providers)
+
+Keys, tokens, and cookies are static credentials that don't change when used.
+Adding a second account is a single command:
+
+```bash
+usage-monitor-cli openai account add work --label "Work API key"
+usage-monitor-cli openai account set work api_key "sk-..."
+usage-monitor-cli openai account add personal --label "Personal"
+usage-monitor-cli openai account set personal api_key "sk-..."
+
+# Fetch all accounts
+usage-monitor-cli fetch openai
+
+# Fetch just one
+usage-monitor-cli fetch openai --account work
+```
+
+The same pattern works for any API-key, token, or cookie provider — just
+replace `api_key` with `token` or `cookie` as needed. For `opencode-go`,
+remember workspaces are per account (pass `--account <name>` when adding one).
+
+### OAuth providers (Claude, Codex, Gemini, Antigravity)
+
+OAuth tokens **refresh and rotate** — every refresh invalidates the previous
+token, and logging in a second account invalidates the first one's session.
+This means:
+
+- **Never copy a credentials file** between accounts. The copied token gets
+  invalidated as soon as anything refreshes it.
+- **Never log two accounts into the same directory.** The second login ends
+  the first account's session.
+- Each account needs its **own live login** in its own config directory.
+
+#### Codex — `CODEX_HOME` isolation
+
+The Codex CLI respects the `CODEX_HOME` env var for its config directory.
+Use separate directories, log in once per account, then point a named
+usage-monitor account at each `auth.json`:
+
+```bash
+# Log in to each account in its own directory
+CODEX_HOME=~/.codex-personal codex login     # Personal ChatGPT account
+CODEX_HOME=~/.codex-work      codex login     # Work ChatGPT account
+
+# Point usage-monitor accounts at each auth file
+usage-monitor-cli codex account add personal --label "Personal"
+usage-monitor-cli codex account set personal credentials_path ~/.codex-personal/auth.json
+usage-monitor-cli codex account add work --label "Work"
+usage-monitor-cli codex account set work credentials_path ~/.codex-work/auth.json
+
+# Fetch all
+usage-monitor-cli fetch codex
+```
+
+After logging in, leave each `auth.json` for usage-monitor alone — the
+Codex CLI and usage-monitor both rotate tokens, so running `codex` against
+the same `CODEX_HOME` would invalidate usage-monitor's cached token.
+
+#### Claude — `HOME` isolation
+
+Claude Code writes credentials to `~/.claude/.credentials.json` using the
+real `$HOME`. There is no `CLAUDE_HOME` env var, so isolation requires
+overriding `HOME` for each login:
+
+```bash
+# Log in once per account with a fake HOME
+HOME=~/claude-personal claude        # log in to the Personal account
+HOME=~/claude-work     claude        # log in to the Work account
+
+# Point usage-monitor accounts at each credentials file
+usage-monitor-cli claude account add personal --label "Personal"
+usage-monitor-cli claude account set personal credentials_path ~/claude-personal/.claude/.credentials.json
+usage-monitor-cli claude account add work --label "Work"
+usage-monitor-cli claude account set work credentials_path ~/claude-work/.claude/.credentials.json
+
+usage-monitor-cli fetch claude        # one block per account
+```
+
+The same isolation rules apply — after logging in, don't run `claude`
+against a directory that usage-monitor is using, or the two will fight
+over token rotation.
+
+#### Gemini — `credentials_path`
+
+Gemini has no dedicated HOME-style env var. Use `credentials_path` to
+point each account at its own OAuth file:
+
+```bash
+usage-monitor-cli gemini account add work --label "Work Gemini"
+usage-monitor-cli gemini account set work credentials_path /path/to/work/oauth_creds.json
+usage-monitor-cli gemini account set work access_token "$(gcloud auth print-access-token)"
+usage-monitor-cli fetch gemini
+```
+
+#### Antigravity — `credentials_path`
+
+Same pattern as Gemini — no HOME-style env var, use `credentials_path`:
+
+```bash
+usage-monitor-cli antigravity account add work --label "Work"
+usage-monitor-cli antigravity account set work credentials_path /path/to/work/oauth_creds.json
+usage-monitor-cli fetch antigravity --account work
+```
+
+### Per-provider config keys
+
+The `account set <name> <key> <value>` commands accept these provider-specific
+keys. See each provider page for details.
+
+| Key | Used by | Meaning |
+|-----|---------|---------|
+| `api_key` | All API-key providers | API key or secret |
+| `token` | Token/cookie providers | Bearer token or session JWT |
+| `cookie` | Some token providers (alias for `token`) | Browser cookie value |
+| `credentials_path` | `claude`, `codex`, `gemini`, `antigravity` | Path to the OAuth credentials file |
+| `access_token` | `claude`, `codex`, `gemini`, `antigravity` | Raw OAuth bearer token (no auto-refresh) |
+| `base_url` | `llmproxy`, others with custom endpoints | API base URL override |
+| `organization_id` | `kilo` | Team/organization scope |
+| `project_id` | `gemini` | GCP project id |
+| `org` | `devin` | Organization name/ID |
+
+### The auto-detected default
+
+When a provider has **no** configured accounts, a single implicit `default`
+account is used, relying on credential auto-detection (env vars or files).
+Adding a named account does **not** remove the auto-detected default — both
+are fetched side by side:
+
+```bash
+usage-monitor-cli codex account add go --label "Go"
+# Now fetches: [default] (auto-detected $CODEX_HOME) + [go]
+```
+
+To stop fetching the auto-detected default while keeping named accounts:
+
+```bash
+usage-monitor-cli codex account disable default
+```
+
+An explicitly configured `default` account also takes over the slot (no
+auto-detection). Use bare `<provider> set`/`unset` commands to configure it.
