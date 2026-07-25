@@ -483,12 +483,10 @@ def tooltip_lines(entries: list[dict[str, Any]]) -> list[str]:
 def bar_text(entries: list[dict[str, Any]], pinned_provider: str = "") -> str:
     pinned = next((entry for entry in entries if pinned_provider and entry.get("provider") == pinned_provider), None)
     if pinned and not pinned.get("error"):
-        values = [window_percent(pinned, "primary"), window_percent(pinned, "secondary")]
+        values = [window_percent(pinned, key) for key in WINDOW_LABELS]
         values = [value for value in values if value is not None]
-        if len(values) >= 2:
-            return f"{pct_label(values[0])} • {pct_label(values[1])}"
         if values:
-            return pct_label(values[0])
+            return " • ".join(pct_label(value) for value in values)
         return pct_label(max_percent(pinned))
     usable = [max_percent(entry) for entry in entries if not entry.get("error")]
     if usable:

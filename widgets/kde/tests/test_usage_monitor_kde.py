@@ -146,6 +146,31 @@ class SummaryTests(unittest.TestCase):
         self.assertEqual(payload["text"], "42% • 7%")
         self.assertEqual(payload["barProvider"], "claude")
 
+    def test_summarize_pinned_provider_three_windows(self):
+        payload = {"providers": [
+            {"provider_id": "kimi", "display_name": "Kimi",
+             "windows": [
+                 {"id": "primary", "percentage": 28, "resets_at": "Resets at 19:29"},
+                 {"id": "secondary", "percentage": 46},
+                 {"id": "tertiary", "percentage": 31},
+             ]},
+        ]}
+        entries = um.fetch_entries(runner=lambda args: proc(json.dumps(payload)))
+        summary = um.summarize(entries, pinned_provider="kimi")
+        self.assertEqual(summary["text"], "28% • 46% • 31%")
+
+    def test_bar_text_skips_missing_windows(self):
+        payload = {"providers": [
+            {"provider_id": "kimi", "display_name": "Kimi",
+             "windows": [
+                 {"id": "primary", "percentage": 28},
+                 {"id": "tertiary", "percentage": 31},
+             ]},
+        ]}
+        entries = um.fetch_entries(runner=lambda args: proc(json.dumps(payload)))
+        summary = um.summarize(entries, pinned_provider="kimi")
+        self.assertEqual(summary["text"], "28% • 31%")
+
     def test_summarize_orders_by_state(self):
         entries = um.fetch_entries(runner=lambda args: proc(json.dumps(WIDGET_PAYLOAD)))
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
