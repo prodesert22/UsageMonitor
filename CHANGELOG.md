@@ -5,6 +5,27 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
+## [0.7.3]
+
+Fixes the Kimi provider's usage window mapping against the real API and lets the
+KDE panel bar show every usage window a provider exposes.
+
+### Added
+- Kimi now reports the billing-cycle total (`totalQuota`, shown as "uso total"
+  in the Kimi UI) as a third `Total` rate window, alongside the 5-hour session
+  and 7-day weekly windows.
+- The KDE panel bar text now joins all windows of the pinned provider (for
+  example `28% • 46% • 31%` for session, weekly, and total) instead of only the
+  first two.
+
+### Fixed
+- Kimi window mapping: the scope-level detail is the 7-day (weekly) quota and
+  `limits[0]` is the 5-hour session, identified by its `window` descriptor
+  (`duration` + `timeUnit`); previously the session was mislabeled as a generic
+  "Rate limit" and the weekly window carried no duration.
+
+See [releases/v0.7.3.md](releases/v0.7.3.md).
+
 ## [0.7.2]
 
 Adds the Kimi provider to the KDE widget UI and overhauls the multi-account
