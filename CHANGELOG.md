@@ -5,7 +5,10 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [Unreleased]
+## [0.8.0]
+
+Adds theming to the KDE Plasma widget: bundled themes, installed KDE color
+schemes, named custom themes and a transparency slider.
 
 ### Added
 - KDE widget **Theme** settings page: choose between following the current
@@ -87,6 +90,11 @@ notes live in [`releases/`](releases/).
   pending object in place and reassigned the same reference, which does not
   invalidate QML bindings — selecting "Custom" only revealed its options after
   reopening the dialog.
+
+### Changed
+- Workspace crate version and KDE plasmoid metadata bumped to `0.8.0`.
+
+See [releases/v0.8.0.md](releases/v0.8.0.md).
 
 ## [0.7.3]
 
