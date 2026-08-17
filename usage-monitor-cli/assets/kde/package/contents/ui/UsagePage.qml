@@ -10,6 +10,11 @@ QQC2.ScrollView {
     Layout.fillHeight: true
     clip: true
 
+    // The desktop style paints a sunken frame here, filled with the color
+    // scheme's base color. That is opaque, so it covered the popup background —
+    // both the themed palette and anything the transparency slider let through.
+    background: null
+
     ColumnLayout {
         width: usageScroll.availableWidth
         spacing: Kirigami.Units.largeSpacing
@@ -39,13 +44,17 @@ QQC2.ScrollView {
                         Layout.fillWidth: true
                         text: providerCard.modelData.displayName || providerCard.modelData.provider || "Provider"
                         font.bold: true
-                        font.pointSize: Kirigami.Theme.defaultFont.pointSize + 1
+                        font.family: root.ui.fontFamily
+                        font.pointSize: root.ui.cardTitleFontSize
+                        color: root.ui.textColor
                         elide: Text.ElideRight
                     }
 
                     PlasmaComponents3.Label {
                         text: Math.round(providerCard.modelData.maxPercent || 0) + "%"
-                        color: root.levelColor(Number(providerCard.modelData.maxPercent || 0))
+                        color: root.ui.levelColor(Number(providerCard.modelData.maxPercent || 0))
+                        font.family: root.ui.fontFamily
+                        font.pointSize: root.ui.fontSize
                         font.bold: true
                     }
 
@@ -67,7 +76,9 @@ QQC2.ScrollView {
                     text: providerCard.modelData.accountText || ""
                     elide: Text.ElideRight
                     opacity: 0.7
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.family: root.ui.fontFamily
+                    font.pointSize: root.ui.smallFontSize
+                    color: root.ui.subtextColor
                 }
 
                 PlasmaComponents3.Label {
@@ -76,7 +87,9 @@ QQC2.ScrollView {
                     text: providerCard.modelData.accountPlan || ""
                     elide: Text.ElideRight
                     opacity: 0.7
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.family: root.ui.fontFamily
+                    font.pointSize: root.ui.smallFontSize
+                    color: root.ui.subtextColor
                 }
 
                 PlasmaComponents3.Label {
@@ -84,7 +97,9 @@ QQC2.ScrollView {
                     Layout.fillWidth: true
                     text: "Using last successful value"
                     opacity: 0.65
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    font.family: root.ui.fontFamily
+                    font.pointSize: root.ui.smallFontSize
+                    color: root.ui.subtextColor
                 }
 
                 PlasmaComponents3.Label {
@@ -92,7 +107,9 @@ QQC2.ScrollView {
                     Layout.fillWidth: true
                     text: providerCard.modelData.error ? providerCard.modelData.error.message : ""
                     wrapMode: Text.WordWrap
-                    color: Kirigami.Theme.negativeTextColor
+                    font.family: root.ui.fontFamily
+                    font.pointSize: root.ui.fontSize
+                    color: root.ui.errorColor
                 }
 
                 Repeater {
@@ -109,11 +126,16 @@ QQC2.ScrollView {
                             PlasmaComponents3.Label {
                                 Layout.fillWidth: true
                                 text: modelData.label
+                                font.family: root.ui.fontFamily
+                                font.pointSize: root.ui.fontSize
+                                color: root.ui.textColor
                             }
 
                             PlasmaComponents3.Label {
                                 text: Math.round(modelData.percent) + "%"
-                                color: root.levelColor(Number(modelData.percent))
+                                color: root.ui.levelColor(Number(modelData.percent))
+                                font.family: root.ui.fontFamily
+                                font.pointSize: root.ui.fontSize
                                 font.bold: true
                             }
                         }
@@ -121,6 +143,7 @@ QQC2.ScrollView {
                         UsageBar {
                             Layout.fillWidth: true
                             value: modelData.percent
+                            ui: root.ui
                         }
 
                         PlasmaComponents3.Label {
@@ -134,7 +157,9 @@ QQC2.ScrollView {
                                 return r
                             }
                             opacity: 0.65
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
+                            font.family: root.ui.fontFamily
+                            font.pointSize: root.ui.smallFontSize
+                            color: root.ui.subtextColor
                             elide: Text.ElideRight
                         }
                     }
@@ -148,15 +173,17 @@ QQC2.ScrollView {
                     PlasmaComponents3.Label {
                         text: providerCard.costText
                         opacity: 0.75
-                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                        font.family: root.ui.fontFamily
+                        font.pointSize: root.ui.smallFontSize
+                        color: root.ui.subtextColor
                     }
                 }
 
                 Rectangle {
                     Layout.fillWidth: true
                     height: 1
-                    color: Kirigami.Theme.disabledTextColor
-                    opacity: 0.18
+                    color: root.ui.borderColor
+                    opacity: root.ui.dividerOpacity
                 }
             }
         }
@@ -167,6 +194,9 @@ QQC2.ScrollView {
             text: "No provider data yet. Enable a provider or configure credentials, then refresh."
             wrapMode: Text.WordWrap
             opacity: 0.75
+            font.family: root.ui.fontFamily
+            font.pointSize: root.ui.fontSize
+            color: root.ui.subtextColor
         }
     }
 }

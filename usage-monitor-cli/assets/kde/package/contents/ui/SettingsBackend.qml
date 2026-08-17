@@ -15,6 +15,9 @@ Item {
         "showBarText": true,
         "showAccountEmail": true,
         "providerOrder": "[]",
+        "theme": ({ "mode": "plasma", "colors": ({}), "font": ({}), "metrics": ({}) }),
+        "themeCatalog": ({ "builtin": [], "schemes": [] }),
+        "themeState": ({}),
         "plasmoidVersion": "",
         "cliVersion": ""
     })
@@ -57,16 +60,18 @@ Item {
     }
 
     // Persist several state keys in one call (used by config pages on Apply/OK).
+    //
+    // The payload is built with JSON.stringify and quoted with shellQuote: theme
+    // names, colours and font families are free text, and hand-rolled quoting
+    // here used to let a single quote break out of the command line.
     function batchSetState(values) {
         var pairs = []
-        for (var k in values) {
-            var ek = String(k).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")
-            var ev = String(values[k]).replace(/\\/g, "\\\\").replace(/"/g, "\\\"")
-            pairs.push('["' + ek + '","' + ev + '"]')
+        for (var key in values) {
+            pairs.push([String(key), String(values[key])])
         }
         if (pairs.length === 0)
             return
-        runHelper("batch-set-state --json '[" + pairs.join(",") + "]'")
+        runHelper("batch-set-state --json " + shellQuote(JSON.stringify(pairs)))
     }
 
     function setProviderEnabled(providerId, enabled) {
@@ -94,6 +99,16 @@ Item {
 
     function cacheClear() {
         runHelper("cache-clear")
+    }
+
+    // Settings live in the helper's state.json, so saving one emits no KConfig
+    // signal for the applet. Bumping this key (after the helper process has
+    // finished writing) makes main.qml reload right away instead of showing the
+    // old theme/settings until the next refresh tick.
+    function notifyApplet() {
+        if (typeof plasmoid !== "undefined" && plasmoid && plasmoid.configuration) {
+            plasmoid.configuration.stateRevision = String(Date.now())
+        }
     }
 
     function filteredSettingsProviders(query) {
@@ -174,12 +189,15 @@ Item {
 
             var isSettings = sourceName.indexOf(" settings") !== -1
             var isManage = sourceName.indexOf(" set-provider ") !== -1
+                || sourceName.indexOf(" set-state ") !== -1
+                || sourceName.indexOf(" batch-set-state ") !== -1
                 || sourceName.indexOf(" account-save ") !== -1
                 || sourceName.indexOf(" account-remove ") !== -1
                 || sourceName.indexOf(" workspace-add ") !== -1
                 || sourceName.indexOf(" workspace-remove ") !== -1
 
             if (isManage) {
+                backend.notifyApplet()
                 backend.loadSettings()
                 return
             }

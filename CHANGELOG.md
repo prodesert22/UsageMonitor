@@ -5,6 +5,89 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
+## [Unreleased]
+
+### Added
+- KDE widget **Theme** settings page: choose between following the current
+  desktop theme (default), one of five bundled themes (macOS Dark, macOS Light,
+  Nord, Dracula, Tokyo Night), any KDE color scheme or Plasma desktop theme
+  already installed on the system (including third-party ones from the KDE
+  Store), or a fully custom palette — colors, font family, text/title/small
+  sizes, bar height, corner radius and background opacity — with a live preview
+  in the config dialog.
+- **Transparency slider** (0–70 %) in the Theme page, applied in every mode —
+  including "follow the current desktop theme", where the translucent layer uses
+  the inherited Plasma colors. Stored as `themeOpacity`. Above 0 % the popup is
+  opened as the widget's own `PlasmaCore.Dialog` with `NoBackground`, because the
+  popup window Plasma creates for applets cannot drop its background and would
+  otherwise show through as solid; a desktop-placed widget also drops the applet
+  card (`Plasmoid.backgroundHints: NoBackground`). Only the fill fades — content
+  stays opaque — and a full-opacity outline keeps the popup's shape readable at
+  high transparency. The settings preview fades the same way, so the slider shows
+  the background changing while the sample content stays solid.
+- Custom mode holds **several named themes**: New/Delete buttons plus a name
+  field and a per-theme base theme, so you build your own palettes instead of
+  editing one anonymous override set. Stored as a JSON array in the
+  `customThemes` state key with `themeCustomId` selecting the active one; themes
+  configured with the previous flat keys are carried over as a theme named
+  "Custom".
+- Popup chrome follows the selected theme too: toolbar icons, hover/pressed
+  backgrounds, busy indicator and scrollbars are painted from the widget palette
+  instead of the desktop color scheme, so they stay visible on light themes.
+- Helper command `usage_monitor_kde.py themes` prints the resolved palette plus
+  the built-in/installed theme catalog; the `summary` payload now carries the
+  theme too, so the panel bar restyles on the next refresh.
+
+### Fixed
+- **Security:** the KDE settings pages no longer build the helper command line by
+  hand. `batchSetState` escaped only `\` and `"` while wrapping the payload in
+  single quotes, so a quote in a theme name, colour or font family broke out of
+  the shell string; the payload is now `JSON.stringify`-ed and passed through the
+  existing `shellQuote`.
+- Theme editor fields (name, colours, font family, sizes) and the transparency
+  slider re-sync with the stored value: editing a control replaced its QML
+  binding, so switching themes kept showing the previous values — and wrote them
+  into the newly selected theme — while Reset no longer moved the slider.
+- Deleting the last custom theme no longer resurrects the pre-`customThemes`
+  palette: an explicit empty list is now distinguished from a missing key.
+- Non-finite numbers (`nan`, `inf`) in `state.json` can no longer reach the
+  payload, where they serialized as bare NaN/Infinity and made every helper
+  command unparsable for QML.
+- Scheme mode no longer rescans and re-parses every installed color scheme on
+  each refresh tick: ids resolve straight to their file (`find_scheme`) and each
+  file is parsed once instead of two or three times.
+- Settings preview mirrors the built-in themes' metrics (corner radius, sizes),
+  which the catalog now carries, and no longer snaps back to the previous theme
+  right after Apply.
+- Provider card titles stay one step above body text instead of jumping to the
+  popup-heading size when a custom theme sets a title size.
+- The popup's selection colour follows the desktop again: it used to force the
+  widget's fixed accent into `Kirigami.Theme.highlightColor` even while following
+  the system theme. The other Kirigami roles are deliberately left inheriting —
+  overriding them made Plasma paint the scrollbar handle with the visited-link
+  colour (purple). The palette also stays a plain object: parking it in the item
+  tree as a hidden Item left Kirigami's attached theme uninitialised, reporting
+  `#000000` for every role and rendering the widget black in "follow the current
+  desktop theme". A QML smoke test (`widgets/kde/tests/test_theme_palette_qml.py`)
+  guards both.
+- The translucent popup no longer reopens when its panel icon is clicked to close
+  it, and drops its reference to the compact item when Plasma recreates it.
+- Stale `stateRevision` writes (Plasma's generic Apply loop) are ignored instead
+  of triggering a reload from a not-yet-written `state.json`.
+- `color_value` rejects the 4-digit `#argb` form, which QColor cannot parse.
+- KDE config dialog: Apply now repaints the panel bar and popup immediately.
+  Settings that live in the helper's `state.json` emitted no KConfig signal, so
+  the applet only picked them up on the next refresh tick (up to the whole
+  refresh interval); the pages now bump a `stateRevision` KConfig key after the
+  write and the applet reloads from cache at once.
+- KDE popup: the usage list no longer paints the desktop style's sunken frame
+  over the widget background, which made themed palettes and transparency
+  invisible behind an opaque fill.
+- KDE config pages: edits update the page live again. `setPending()` mutated the
+  pending object in place and reassigned the same reference, which does not
+  invalidate QML bindings — selecting "Custom" only revealed its options after
+  reopening the dialog.
+
 ## [0.7.3]
 
 Fixes the Kimi provider's usage window mapping against the real API and lets the

@@ -218,6 +218,313 @@ class SettingsTests(unittest.TestCase):
                 self.assertEqual([p["id"] for p in payload["pinnableProviders"]], ["codex"])
                 self.assertIn("connectHint", codex)
 
+    def test_settings_payload_carries_the_theme(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
+            um._write_state({"themeMode": "builtin", "themeBuiltin": "tokyo-night"})
+            with mock.patch.object(um, "cli_output", side_effect=self.fake_output), \
+                 mock.patch.object(um, "cli_version", return_value="0.7.3"), \
+                 mock.patch.object(um, "installed_schemes", return_value=[]):
+                payload = um.settings_payload()
+            self.assertEqual(payload["theme"]["id"], "tokyo-night")
+            self.assertEqual(payload["theme"]["colors"]["background"], "#1a1b26")
+            self.assertEqual(len(payload["themeCatalog"]["builtin"]), 5)
+            # Raw state keys drive the config page's pending-edit fallbacks.
+            self.assertEqual(payload["themeState"]["themeBuiltin"], "tokyo-night")
+
+
+SCHEME_FILE = """[General]
+Name=Test Mojave
+
+[Colors:Button]
+BackgroundNormal=60,60,60
+
+[Colors:Window]
+BackgroundNormal=28,28,30
+ForegroundNormal=245,245,247
+ForegroundInactive=152,152,157
+ForegroundNegative=255,69,58
+ForegroundNeutral=255,159,10
+DecorationFocus=10,132,255
+"""
+
+
+class ColorTests(unittest.TestCase):
+    def test_color_value_accepts_hex_and_rgb(self):
+        self.assertEqual(um.color_value("#1C1C1E"), "#1c1c1e")
+        self.assertEqual(um.color_value("#abc"), "#abc")
+        self.assertEqual(um.color_value("28,28,30"), "#1c1c1e")
+        self.assertEqual(um.color_value("28,28,30,255"), "#1c1c1e")
+
+    def test_color_value_rejects_junk(self):
+        # Anything QML could not parse is dropped rather than passed through.
+        # "#8abc" included: QColor has no 4-digit form.
+        for bad in ("", None, "red; evil", "rgb(1,2,3)", "#12345", "#8abc", "not a color"):
+            self.assertEqual(um.color_value(bad), "")
+
+    def test_is_dark(self):
+        self.assertTrue(um.is_dark("#1c1c1e"))
+        self.assertFalse(um.is_dark("#f5f5f7"))
+        self.assertTrue(um.is_dark("#ff1c1c1e"))  # #aarrggbb
+
+
+class ThemeTests(unittest.TestCase):
+    def test_default_is_the_desktop_theme(self):
+        theme = um.resolve_theme({})
+        self.assertEqual(theme["mode"], "plasma")
+        self.assertEqual(theme["colors"], {})
+        self.assertEqual(theme["font"]["family"], "")
+
+    def test_builtin_theme(self):
+        theme = um.resolve_theme({"themeMode": "builtin", "themeBuiltin": "nord"})
+        self.assertEqual(theme["mode"], "builtin")
+        self.assertEqual(theme["name"], "Nord")
+        self.assertEqual(theme["colors"]["background"], "#2e3440")
+        self.assertTrue(theme["dark"])
+
+    def test_unknown_builtin_falls_back_to_default(self):
+        theme = um.resolve_theme({"themeMode": "builtin", "themeBuiltin": "nope"})
+        self.assertEqual(theme["id"], um.DEFAULT_BUILTIN)
+
+    def test_five_builtin_themes_are_offered(self):
+        self.assertEqual(len(um.BUILTIN_THEMES), 5)
+        self.assertIn("macos-dark", um.BUILTIN_THEMES)
+        self.assertIn("macos-light", um.BUILTIN_THEMES)
+
+    def test_custom_theme_overrides_the_base(self):
+        theme = um.resolve_theme({
+            "themeMode": "custom",
+            "themeBuiltin": "nord",
+            "themeCustomBackground": "#101010",
+            "themeCustomAccent": "not-a-color",
+            "themeCustomFontFamily": "Fira Sans",
+            "themeCustomFontSize": "12",
+            "themeCustomBarHeight": "10",
+            "themeCustomOpacity": "0.85",
+        })
+        self.assertEqual(theme["mode"], "custom")
+        self.assertEqual(theme["colors"]["background"], "#101010")
+        # Unset keys keep the base theme's value; invalid ones are ignored.
+        self.assertEqual(theme["colors"]["text"], um.BUILTIN_THEMES["nord"]["colors"]["text"])
+        self.assertEqual(theme["colors"]["accent"], um.BUILTIN_THEMES["nord"]["colors"]["accent"])
+        self.assertEqual(theme["font"], {"family": "Fira Sans", "size": 12.0, "headingSize": 0.0, "smallSize": 0.0})
+        self.assertEqual(theme["metrics"]["barHeight"], 10.0)
+        self.assertEqual(theme["metrics"]["opacity"], 0.85)
+
+    def test_transparency_applies_to_every_mode(self):
+        raw = json.dumps([{"id": "t1", "name": "Mine", "base": "nord"}])
+        for state in (
+            {"themeOpacity": "0.7"},
+            {"themeMode": "builtin", "themeBuiltin": "nord", "themeOpacity": "0.7"},
+            {"themeMode": "custom", "customThemes": raw, "themeOpacity": "0.7"},
+        ):
+            self.assertEqual(um.resolve_theme(state)["metrics"]["opacity"], 0.7, state)
+
+    def test_transparency_survives_a_missing_scheme(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.dict(os.environ, {"XDG_DATA_HOME": td, "XDG_DATA_DIRS": td}, clear=True):
+            theme = um.resolve_theme({"themeMode": "scheme", "themeScheme": "colors:Gone", "themeOpacity": "0.5"})
+            self.assertEqual(theme["mode"], "plasma")
+            self.assertEqual(theme["metrics"]["opacity"], 0.5)
+
+    def test_transparency_is_clamped_and_defaults_to_solid(self):
+        self.assertEqual(um.resolve_theme({})["metrics"]["opacity"], 1.0)
+        self.assertEqual(um.resolve_theme({"themeOpacity": ""})["metrics"]["opacity"], 1.0)
+        self.assertEqual(um.resolve_theme({"themeOpacity": "5"})["metrics"]["opacity"], 1.0)
+        self.assertEqual(um.resolve_theme({"themeOpacity": "0"})["metrics"]["opacity"], 0.1)
+        self.assertEqual(um.resolve_theme({"themeOpacity": "junk"})["metrics"]["opacity"], 1.0)
+
+    def test_theme_opacity_falls_back_to_the_custom_theme_value(self):
+        raw = json.dumps([{"id": "t1", "name": "Mine", "base": "nord", "metrics": {"opacity": 0.8}}])
+        state = {"themeMode": "custom", "customThemes": raw}
+        # No slider value yet: keep what the theme itself carries.
+        self.assertEqual(um.resolve_theme(state)["metrics"]["opacity"], 0.8)
+        # The slider wins once it is set.
+        self.assertEqual(um.resolve_theme({**state, "themeOpacity": "0.5"})["metrics"]["opacity"], 0.5)
+
+    def test_legacy_custom_opacity_is_clamped(self):
+        self.assertEqual(um.resolve_theme({"themeMode": "custom", "themeCustomOpacity": "5"})["metrics"]["opacity"], 1.0)
+        self.assertEqual(um.resolve_theme({"themeMode": "custom", "themeCustomOpacity": "0"})["metrics"]["opacity"], 0.1)
+        self.assertEqual(um.resolve_theme({"themeMode": "custom", "themeCustomOpacity": "x"})["metrics"]["opacity"], 1.0)
+
+    def test_read_color_scheme_maps_kde_keys(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "Mojave.colors"
+            path.write_text(SCHEME_FILE, encoding="utf-8")
+            colors = um.read_color_scheme(path)
+            self.assertEqual(colors["background"], "#1c1c1e")
+            self.assertEqual(colors["text"], "#f5f5f7")
+            self.assertEqual(colors["subtext"], "#98989d")
+            self.assertEqual(colors["accent"], "#0a84ff")
+            self.assertEqual(colors["critical"], "#ff453a")
+            self.assertEqual(colors["track"], "#3c3c3c")
+
+    def test_read_color_scheme_ignores_unusable_files(self):
+        with tempfile.TemporaryDirectory() as td:
+            path = Path(td) / "broken.colors"
+            path.write_text("[Colors:Button]\nBackgroundNormal=1,2,3\n", encoding="utf-8")
+            self.assertEqual(um.read_color_scheme(path), {})
+
+    def _install_scheme(self, data_home: Path) -> None:
+        schemes = data_home / "color-schemes"
+        schemes.mkdir(parents=True)
+        (schemes / "Mojave.colors").write_text(SCHEME_FILE, encoding="utf-8")
+        theme_dir = data_home / "plasma" / "desktoptheme" / "whitesur"
+        theme_dir.mkdir(parents=True)
+        (theme_dir / "colors").write_text(SCHEME_FILE, encoding="utf-8")
+        (theme_dir / "metadata.json").write_text(json.dumps({"KPlugin": {"Name": "WhiteSur"}}), encoding="utf-8")
+
+    def test_installed_schemes_finds_color_schemes_and_desktop_themes(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._install_scheme(Path(td))
+            with mock.patch.dict(os.environ, {"XDG_DATA_HOME": td, "XDG_DATA_DIRS": td}, clear=True):
+                schemes = um.installed_schemes()
+            ids = [s["id"] for s in schemes]
+            self.assertIn("colors:Mojave", ids)
+            self.assertIn("desktoptheme:whitesur", ids)
+            mojave = next(s for s in schemes if s["id"] == "colors:Mojave")
+            self.assertEqual(mojave["name"], "Test Mojave")
+            self.assertTrue(mojave["dark"])
+            self.assertEqual(mojave["colors"]["background"], "#1c1c1e")
+
+    def test_scheme_mode_resolves_installed_scheme(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._install_scheme(Path(td))
+            with mock.patch.dict(os.environ, {"XDG_DATA_HOME": td, "XDG_DATA_DIRS": td}, clear=True):
+                theme = um.resolve_theme({"themeMode": "scheme", "themeScheme": "colors:Mojave"})
+            self.assertEqual(theme["mode"], "scheme")
+            self.assertEqual(theme["name"], "Test Mojave")
+            self.assertEqual(theme["colors"]["background"], "#1c1c1e")
+
+    def test_removed_scheme_falls_back_to_the_desktop_theme(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.dict(os.environ, {"XDG_DATA_HOME": td, "XDG_DATA_DIRS": td}, clear=True):
+            theme = um.resolve_theme({"themeMode": "scheme", "themeScheme": "colors:Gone"})
+            self.assertEqual(theme["mode"], "plasma")
+
+    def test_custom_themes_are_named_and_sanitized(self):
+        raw = json.dumps([
+            {"id": "t1", "name": "My Nord", "base": "nord",
+             "colors": {"background": "#20242c", "accent": "javascript:alert(1)"},
+             "font": {"family": "Fira Sans", "size": "11"},
+             "metrics": {"barHeight": 10, "opacity": 0.9}},
+            {"id": "t1", "name": "duplicate id, dropped"},
+            {"name": "no id", "base": "nope"},
+            "not a theme",
+        ])
+        themes = um.custom_themes({"customThemes": raw})
+        self.assertEqual([t["id"] for t in themes], ["t1", "custom-3"])
+        nord = themes[0]
+        self.assertEqual(nord["name"], "My Nord")
+        self.assertEqual(nord["colors"]["background"], "#20242c")
+        # Junk colours never reach QML.
+        self.assertNotIn("accent", nord["colors"])
+        self.assertEqual(nord["font"], {"family": "Fira Sans", "size": 11.0, "headingSize": 0.0, "smallSize": 0.0})
+        self.assertEqual(nord["metrics"]["barHeight"], 10.0)
+        # An unknown base falls back to the default built-in.
+        self.assertEqual(themes[1]["base"], um.DEFAULT_BUILTIN)
+
+    def test_custom_themes_ignores_invalid_json(self):
+        self.assertEqual(um.custom_themes({"customThemes": "{not json"}), [])
+
+    def test_resolve_custom_picks_the_selected_theme(self):
+        raw = json.dumps([
+            {"id": "t1", "name": "Dark one", "base": "nord", "colors": {"background": "#101010"}},
+            {"id": "t2", "name": "Light one", "base": "macos-light", "colors": {}},
+        ])
+        theme = um.resolve_theme({"themeMode": "custom", "customThemes": raw, "themeCustomId": "t2"})
+        self.assertEqual(theme["id"], "t2")
+        self.assertEqual(theme["name"], "Light one")
+        self.assertEqual(theme["colors"]["background"], "#f5f5f7")
+        self.assertFalse(theme["dark"])
+        # Colours not overridden come from the theme's own base.
+        first = um.resolve_theme({"themeMode": "custom", "customThemes": raw, "themeCustomId": "gone"})
+        self.assertEqual(first["id"], "t1")
+        self.assertEqual(first["colors"]["background"], "#101010")
+        self.assertEqual(first["colors"]["text"], um.BUILTIN_THEMES["nord"]["colors"]["text"])
+
+    def test_resolve_custom_without_themes_uses_the_base(self):
+        theme = um.resolve_theme({"themeMode": "custom", "themeBuiltin": "dracula"})
+        self.assertEqual(theme["mode"], "custom")
+        self.assertEqual(theme["colors"], um.BUILTIN_THEMES["dracula"]["colors"])
+
+    def test_legacy_flat_custom_keys_become_a_named_theme(self):
+        sf = {
+            "themeMode": "custom",
+            "themeBuiltin": "macos-light",
+            "themeCustomBackground": "#fff8e7",
+            "themeCustomFontFamily": "Fira Sans",
+        }
+        themes = um.custom_themes(sf)
+        self.assertEqual([t["id"] for t in themes], ["custom"])
+        self.assertEqual(themes[0]["name"], "Custom")
+        self.assertEqual(themes[0]["base"], "macos-light")
+        self.assertEqual(themes[0]["colors"]["background"], "#fff8e7")
+        # And it stays the palette the widget renders.
+        self.assertEqual(um.resolve_theme(sf)["colors"]["background"], "#fff8e7")
+
+    def test_no_legacy_theme_when_nothing_was_customised(self):
+        self.assertEqual(um.custom_themes({"themeMode": "custom"}), [])
+
+    def test_non_finite_numbers_never_reach_the_payload(self):
+        raw = json.dumps([{"id": "t1", "base": "nord",
+                           "metrics": {"barHeight": "inf", "radius": "nan", "opacity": "-inf"},
+                           "font": {"size": "nan"}}])
+        theme = um.resolve_theme({"themeMode": "custom", "customThemes": raw})
+        self.assertEqual(theme["metrics"], {"barHeight": 6, "radius": 4, "opacity": 1.0})
+        self.assertEqual(theme["font"]["size"], 0.0)
+        # json.dumps would emit bare NaN/Infinity, which QML's JSON.parse rejects.
+        json.loads(json.dumps(theme, allow_nan=False))
+
+    def test_deleting_the_last_theme_does_not_restore_the_legacy_one(self):
+        legacy = {"themeMode": "custom", "themeCustomBackground": "#fff8e7"}
+        # Key absent -> the old flat keys are still migrated.
+        self.assertEqual(um.resolve_theme(legacy)["colors"]["background"], "#fff8e7")
+        # Explicit empty list -> the user deleted their themes; stay deleted.
+        emptied = {**legacy, "customThemes": "[]"}
+        self.assertEqual(um.custom_themes(emptied), [])
+        self.assertNotEqual(um.resolve_theme(emptied)["colors"]["background"], "#fff8e7")
+        # Unparsable value still falls back rather than losing the palette.
+        self.assertEqual(len(um.custom_themes({**legacy, "customThemes": "{oops"})), 1)
+
+    def test_find_scheme_resolves_by_id_without_scanning(self):
+        with tempfile.TemporaryDirectory() as td:
+            self._install_scheme(Path(td))
+            with mock.patch.dict(os.environ, {"XDG_DATA_HOME": td, "XDG_DATA_DIRS": td}, clear=True), \
+                 mock.patch.object(um, "installed_schemes", side_effect=AssertionError("must not scan")):
+                entry = um.find_scheme("colors:Mojave")
+                self.assertEqual(entry["name"], "Test Mojave")
+                self.assertEqual(entry["colors"]["background"], "#1c1c1e")
+                self.assertEqual(um.find_scheme("desktoptheme:whitesur")["name"], "WhiteSur")
+                # And the render path uses it, so a refresh tick never scans.
+                theme = um.resolve_theme({"themeMode": "scheme", "themeScheme": "colors:Mojave"})
+                self.assertEqual(theme["colors"]["background"], "#1c1c1e")
+
+    def test_find_scheme_rejects_traversal_and_unknown_kinds(self):
+        for bad in ("colors:../../etc/passwd", "colors:", "bogus:Mojave", ""):
+            self.assertIsNone(um.find_scheme(bad))
+
+    def test_catalog_builtins_carry_font_and_metrics(self):
+        # The settings preview mirrors resolve_theme from these.
+        macos = next(t for t in um.theme_catalog(schemes=[])["builtin"] if t["id"] == "macos-dark")
+        self.assertEqual(macos["metrics"]["radius"], um.BUILTIN_THEMES["macos-dark"]["metrics"]["radius"])
+        self.assertIn("family", macos["font"])
+
+    def test_catalog_lists_custom_themes(self):
+        raw = json.dumps([{"id": "t1", "name": "Mine", "base": "nord"}])
+        catalog = um.theme_catalog(schemes=[], sf={"customThemes": raw})
+        self.assertEqual([(t["id"], t["name"]) for t in catalog["custom"]], [("t1", "Mine")])
+
+    def test_catalog_lists_builtins_and_schemes(self):
+        catalog = um.theme_catalog(schemes=[{"id": "colors:X", "name": "X"}])
+        self.assertEqual([t["id"] for t in catalog["builtin"]], list(um.BUILTIN_THEMES))
+        self.assertEqual(catalog["schemes"][0]["id"], "colors:X")
+        self.assertEqual(catalog["colorKeys"], list(um.THEME_COLOR_KEYS))
+
+    def test_theme_survives_a_state_roundtrip(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):
+            um._write_state({"themeMode": "builtin", "themeBuiltin": "dracula"})
+            self.assertEqual(um.resolve_theme()["colors"]["background"], "#282a36")
+
 
 class CommandTests(unittest.TestCase):
     def test_set_provider_uses_top_level_enable(self):

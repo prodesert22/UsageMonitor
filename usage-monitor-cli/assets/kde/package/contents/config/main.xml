@@ -9,5 +9,12 @@
        needs to exist for the config dialog to appear. -->
   <kcfgfile name=""/>
   <group name="General">
+    <!-- Change ticket, not a setting: because the real settings bypass KConfig,
+         the applet gets no signal when a config page writes state.json. The
+         pages bump this key once the helper has finished writing, and main.qml
+         reloads on the change instead of waiting for the next refresh tick. -->
+    <entry name="stateRevision" type="String">
+      <default></default>
+    </entry>
   </group>
 </kcfg>

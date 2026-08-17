@@ -90,7 +90,10 @@ The full table with each provider's auth and auto-enable rule lives in
 ## Desktop widgets
 
 Usage Monitor ships KDE Plasma 6 and Waybar widgets, embedded in the binary and
-installed with `usage-monitor-cli widget install <kde|waybar|all>`. See
+installed with `usage-monitor-cli widget install <kde|waybar|all>`. The KDE
+plasmoid can follow the current desktop theme, use one of five bundled themes
+(macOS Dark/Light, Nord, Dracula, Tokyo Night), reuse an installed KDE color
+scheme, or run a custom palette configured in its **Theme** settings page. See
 [docs/widgets/](docs/widgets/README.md).
 
 ## Structure

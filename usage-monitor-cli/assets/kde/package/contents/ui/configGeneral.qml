@@ -20,7 +20,12 @@ KCM.SimpleKCM {
     bottomPadding: Kirigami.Units.gridUnit
 
     function setPending(key, value) {
-        var p = page.pending
+        // Copy instead of mutating in place: reassigning the same object does
+        // not notify the bindings that read page.pending (see configTheme.qml).
+        var p = {}
+        for (var k in page.pending) {
+            p[k] = page.pending[k]
+        }
         p[key] = value
         page.pending = p
         page.configurationChanged()

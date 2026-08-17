@@ -2,25 +2,28 @@ import QtQuick
 import org.kde.kirigami as Kirigami
 
 Item {
-    id: root
+    id: bar
 
     property real value: 0
-    property color fillColor: value >= 90 ? "#ff453a" : (value >= 70 ? "#ff9f0a" : "#0a84ff")
+    // ThemePalette instance; when unset the bar keeps its original colours.
+    property var ui: null
+    property color fillColor: bar.ui ? bar.ui.levelColor(value)
+                                     : (value >= 90 ? "#ff453a" : (value >= 70 ? "#ff9f0a" : "#0a84ff"))
 
-    implicitHeight: 6
+    implicitHeight: bar.ui ? bar.ui.barHeight : 6
     implicitWidth: 180
 
     Rectangle {
         anchors.fill: parent
         radius: height / 2
-        color: Kirigami.Theme.disabledTextColor
-        opacity: 0.22
+        color: bar.ui ? bar.ui.trackColor : Kirigami.Theme.disabledTextColor
+        opacity: bar.ui ? bar.ui.trackOpacity : 0.22
     }
 
     Rectangle {
-        width: Math.max(0, Math.min(100, root.value)) / 100 * parent.width
+        width: Math.max(0, Math.min(100, bar.value)) / 100 * parent.width
         height: parent.height
         radius: height / 2
-        color: root.fillColor
+        color: bar.fillColor
     }
 }

@@ -2,6 +2,7 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 import org.kde.kirigami as Kirigami
+import org.kde.plasma.core as PlasmaCore
 import org.kde.plasma.plasma5support as Plasma5Support
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents3
@@ -16,9 +17,19 @@ PlasmoidItem {
     property string errorText: ""
     property string errorDetails: ""
     property bool busy: false
-    property var settings: ({"providers": [], "pinnableProviders": [], "pinnedProvider": "", "refreshIntervalSeconds": 30, "showBarText": true, "showAccountEmail": true, "providerOrder": "[]", "plasmoidVersion": "", "cliVersion": ""})
+    property var settings: ({"providers": [], "pinnableProviders": [], "pinnedProvider": "", "refreshIntervalSeconds": 30, "showBarText": true, "showAccountEmail": true, "providerOrder": "[]", "theme": ({"mode": "plasma", "colors": ({}), "font": ({}), "metrics": ({})}), "plasmoidVersion": "", "cliVersion": ""})
     property string helperPath: localFilePath(Qt.resolvedUrl("../code/usage_monitor_kde.py"))
     property string monitorIcon: Qt.resolvedUrl("../images/usage-monitor.png")
+
+    // Shared palette for the panel bar and the popup. The summary payload
+    // carries the theme too, so the bar is styled on the first refresh instead
+    // of waiting for the (slower) settings payload.
+    property alias ui: themePalette
+
+    ThemePalette {
+        id: themePalette
+        spec: root.summary.theme || root.settings.theme || ({})
+    }
 
     // Reload display prefs (bar text, refresh interval) when the popup opens, so
     // changes made in the native config window take effect.
@@ -29,7 +40,107 @@ PlasmoidItem {
         }
     }
 
+    // The config pages bump this KConfig key after writing state.json (see
+    // SettingsBackend.notifyApplet), which is the only signal the applet gets
+    // for settings that do not live in KConfig. Reload at once so Apply is
+    // reflected immediately instead of on the next refresh tick.
+    readonly property string stateRevision: Plasmoid.configuration.stateRevision || ""
+    // Revisions are timestamps, so anything not newer than the last one handled
+    // is ignored: Plasma's generic Apply loop can write back the value a config
+    // page captured when it opened, which would otherwise reload the widget from
+    // a state.json the helper has not written yet.
+    property double lastStateRevision: 0
+    onStateRevisionChanged: {
+        var revision = Number(root.stateRevision) || 0
+        if (revision <= root.lastStateRevision) {
+            return
+        }
+        root.lastStateRevision = revision
+        // `cache` re-renders the bar and popup from the last-good data with the
+        // new theme/pin applied without hitting the network, so Apply lands in
+        // milliseconds; live data still arrives on the next refresh tick.
+        loadSettings()
+        loadCache()
+    }
+
+    // The applet popup Plasma creates for us is a PlasmaWindow, whose background
+    // can only be StandardBackground or SolidBackground — never "none". Painting
+    // our layer at partial alpha therefore only blends with that opaque
+    // background: the desktop never shows through. So when transparency is on we
+    // open our own PlasmaCore.Dialog with NoBackground and paint the popup
+    // ourselves; at 0 % transparency the native popup is used, unchanged.
+    property Item compactItem: null
+    // Set when the dialog auto-hides: the press that dismisses it deactivates
+    // the window before the click reaches us, so without this a click on the
+    // icon to close the popup would immediately reopen it.
+    property double popupHiddenAt: 0
+
+    function togglePopup() {
+        if (root.ui.translucent) {
+            root.expanded = false
+            translucentPopup.active = true
+            var dialog = translucentPopup.item
+            if (!dialog) {
+                return
+            }
+            if (dialog.visible) {
+                dialog.visible = false
+                return
+            }
+            if (Date.now() - root.popupHiddenAt < 300) {
+                return
+            }
+            loadSettings()
+            refresh()
+            dialog.visible = true
+        } else {
+            root.expanded = !root.expanded
+        }
+    }
+
+    Loader {
+        id: translucentPopup
+        active: false
+        // Inline component on purpose: a separate file would not see the ids of
+        // this one, and FullPopup reads `root`.
+        sourceComponent: Component {
+            PlasmaCore.Dialog {
+                id: translucentDialog
+
+                type: PlasmaCore.Dialog.AppletPopup
+                backgroundHints: PlasmaCore.Dialog.NoBackground
+                location: Plasmoid.location
+                visualParent: root.compactItem
+                hideOnWindowDeactivate: root.hideOnWindowDeactivate
+                visible: false
+
+                onVisibleChanged: if (!visible) root.popupHiddenAt = Date.now()
+
+                mainItem: FullPopup {
+                    width: implicitWidth
+                    height: implicitHeight
+                }
+            }
+        }
+    }
+
+    // Switching between the two popup paths closes whichever one is open, so the
+    // widget never ends up with both (or a stale translucent window).
+    readonly property bool translucent: root.ui.translucent
+    onTranslucentChanged: {
+        root.expanded = false
+        if (translucentPopup.item) {
+            translucentPopup.item.visible = false
+        }
+    }
+
     Plasmoid.icon: Qt.resolvedUrl("../images/usage-monitor.png")
+    // With transparency on, drop the applet's own background so the widget layer
+    // is what decides how see-through it looks (this covers a widget placed on
+    // the desktop; the panel popup is handled by the dialog above).
+    Plasmoid.backgroundHints: root.ui.translucent
+        ? PlasmaCore.Types.NoBackground
+        : (PlasmaCore.Types.DefaultBackground | PlasmaCore.Types.ConfigurableBackground)
     toolTipMainText: "Usage Monitor"
     toolTipSubText: summary.tooltip || errorText || "No provider data yet"
     preferredRepresentation: compactRepresentation
@@ -93,16 +204,6 @@ PlasmoidItem {
             }
         }
         return result
-    }
-
-    function levelColor(percent) {
-        if (percent >= 90) {
-            return "#ff453a"
-        }
-        if (percent >= 70) {
-            return "#ff9f0a"
-        }
-        return "#0a84ff"
     }
 
     function compactLabelPct() {
@@ -206,11 +307,25 @@ PlasmoidItem {
 
         clip: true
 
+        // Themed pill behind the bar content. Without a theme (and at full
+        // opacity) the panel paints its own background, so only the hover
+        // highlight is drawn.
         Rectangle {
             anchors.fill: parent
-            radius: Kirigami.Units.smallSpacing
-            color: compactMouse.containsMouse ? Kirigami.Theme.hoverColor : "transparent"
-            opacity: compactMouse.containsMouse ? 0.25 : 1
+            visible: root.ui.paintsBackground
+            radius: root.ui.themed ? root.ui.cornerRadius : Kirigami.Units.smallSpacing
+            color: root.ui.backgroundColor
+            opacity: root.ui.backgroundOpacity
+            border.width: root.ui.themed ? 1 : 0
+            border.color: root.ui.borderColor
+        }
+
+        Rectangle {
+            anchors.fill: parent
+            radius: root.ui.themed ? root.ui.cornerRadius : Kirigami.Units.smallSpacing
+            visible: compactMouse.containsMouse
+            color: root.ui.themed ? root.ui.accentColor : Kirigami.Theme.hoverColor
+            opacity: 0.25
         }
 
         RowLayout {
@@ -234,17 +349,25 @@ PlasmoidItem {
                 elide: Text.ElideRight
                 color: {
                     var pct = compactLabelPct()
-                    return pct < 70 ? Kirigami.Theme.textColor : root.levelColor(pct)
+                    return pct < 70 ? root.ui.textColor : root.ui.levelColor(pct)
                 }
+                font.family: root.ui.fontFamily
+                font.pointSize: root.ui.fontSize
                 font.bold: compactLabelPct() >= 90
             }
         }
+
+        // The dialog anchors to the panel slot, so it has to know this item —
+        // and must not keep pointing at it once Plasma recreates the compact
+        // representation (form factor change, panel re-layout).
+        Component.onCompleted: root.compactItem = compactRoot
+        Component.onDestruction: if (root.compactItem === compactRoot) root.compactItem = null
 
         MouseArea {
             id: compactMouse
             anchors.fill: parent
             hoverEnabled: true
-            onClicked: root.expanded = !root.expanded
+            onClicked: root.togglePopup()
         }
     }
 
