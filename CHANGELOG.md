@@ -5,7 +5,7 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
-## [Unreleased]
+## [0.8.1]
 
 ### Added
 - **Waybar popup**: the KDE Plasma widget's QML interface, ported to plain Qt
@@ -73,6 +73,12 @@ notes live in [`releases/`](releases/).
   default); on Wayland the compositor decides, so the window sets
   `app_id`/`WM_CLASS` `usage-monitor-waybar` and the docs give ready-made
   Hyprland/Sway/river rules.
+
+### Changed
+- Workspace crate version, KDE plasmoid metadata and Waybar popup version bumped
+  to `0.8.1`.
+
+See [releases/v0.8.1.md](releases/v0.8.1.md).
 
 ## [0.8.0]
 
