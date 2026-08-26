@@ -56,7 +56,7 @@ pub(super) fn provider_from_snapshot(snapshot: &UsageSnapshot) -> WidgetProvider
         )
         .map(|(id, window)| WidgetWindow::from_window(id, window))
         .collect::<Vec<_>>();
-    let max_percentage = windows.iter().map(|w| w.percentage).max().unwrap_or(0);
+    let max_percentage = windows.iter().map(|w| w.percentage).fold(0.0, f64::max);
     WidgetProvider {
         provider_id: snapshot.provider_id.clone(),
         display_name: provider_display_name(&snapshot.provider_id),
@@ -92,7 +92,7 @@ pub(super) fn provider_from_error(target: &AccountTarget, error: String) -> Widg
         account_email: None,
         plan: None,
         windows: Vec::new(),
-        max_percentage: 0,
+        max_percentage: 0.0,
         status: "stale".into(),
         error: Some(error),
         credits: None,
@@ -128,7 +128,12 @@ pub(super) fn provider_tooltip_line(provider: &WidgetProvider) -> String {
                 .as_ref()
                 .map(|value| format!(" {value}"))
                 .unwrap_or_default();
-            format!("{} {}%{}", window.label, window.percentage, reset)
+            format!(
+                "{} {}{}",
+                window.label,
+                format_percent(window.percentage),
+                reset
+            )
         })
         .collect::<Vec<_>>()
         .join(" · ");
@@ -156,15 +161,23 @@ fn widget_reset_description(value: chrono::DateTime<chrono::Utc>) -> String {
     format!("{}{}", first.to_uppercase(), &text[1..])
 }
 
-pub(super) fn ratio_percentage(ratio: f64) -> u8 {
-    (ratio.clamp(0.0, 1.0) * 100.0).round() as u8
+pub(super) fn ratio_percentage(ratio: f64) -> f64 {
+    ((ratio.clamp(0.0, 1.0) * 100.0) * 10.0).round() / 10.0
 }
 
-pub(super) fn widget_class(percentage: u8) -> &'static str {
+pub(super) fn widget_class(percentage: f64) -> &'static str {
     match percentage {
-        95..=100 => "critical",
-        80..=94 => "warning",
+        95.0..=100.0 => "critical",
+        80.0..=94.0 => "warning",
         _ => "ok",
+    }
+}
+
+pub(super) fn format_percent(value: f64) -> String {
+    if value.fract() == 0.0 {
+        format!("{}%", value as i64)
+    } else {
+        format!("{:.1}%", value)
     }
 }
 

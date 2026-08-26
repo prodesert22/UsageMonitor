@@ -13,6 +13,10 @@ const KDE_ICON_NAME: &str = "usage-monitor";
 const KDE_ICON_SOURCE: &str = "contents/images/usage-monitor.png";
 const VERSION: &str = env!("CARGO_PKG_VERSION");
 const TARGETS: [&str; 2] = ["kde", "waybar"];
+const WAYBAR_BIN: &str = "usage-monitor-waybar";
+/// Launcher for the Qt Quick popup (the KDE widget's UI, wired to `on-click`).
+const WAYBAR_POPUP_BIN: &str = "usage-monitor-waybar-popup";
+const WAYBAR_DESKTOP_FILE: &str = "usage-monitor-waybar.desktop";
 static KDE_PACKAGE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/kde/package");
 static WAYBAR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/waybar");
 
@@ -102,6 +106,7 @@ pub(crate) fn doctor() -> Result<()> {
     println!("KDE plasmoid: {}", kde_plasmoid_dir()?.display());
     println!("KDE icon: {}", kde_icon_path()?.display());
     println!("Waybar wrapper: {}", waybar_bin_path()?.display());
+    println!("Waybar popup: {}", waybar_popup_bin_path()?.display());
     for target in TARGETS {
         println!(
             "{target} installed version: {}",
@@ -156,25 +161,42 @@ fn install_waybar(_force: bool) -> Result<()> {
     let bin_dir = local_bin()?;
     fs::create_dir_all(&bin_dir).with_context(|| format!("create {}", bin_dir.display()))?;
     let bin = waybar_bin_path()?;
-    let script = dir.join("usage-monitor-waybar");
+    let script = dir.join(WAYBAR_BIN);
     replace_symlink(&script, &bin)?;
+    // The popup is a second entry point (Waybar's `on-click`): the module keeps
+    // working without it, so it is linked but never required.
+    let popup_bin = waybar_popup_bin_path()?;
+    replace_symlink(&dir.join(WAYBAR_POPUP_BIN), &popup_bin)?;
+    install_waybar_desktop_entry(&dir, &popup_bin)?;
 
     println!("Waybar wrapper installed at {}", bin.display());
+    println!("Waybar popup installed at {}", popup_bin.display());
     println!("Waybar setup is two edits in ~/.config/waybar/config.jsonc:");
     println!("1) Define the module:");
+    // 300 s on purpose: provider endpoints behind subscription plans rate-limit
+    // aggressively, and the module serves its shared cache between fetches
+    // anyway, so a shorter interval buys nothing but throttling.
     println!(
         r#"   "custom/usage-monitor": {{
      "exec": "{}",
      "return-type": "json",
-     "interval": 30,
+     "interval": 300,
      "format": "{{text}}",
-     "tooltip": true
+     "tooltip": true,
+     "on-click": "{}",
+     "on-click-right": "{} --settings"
    }}"#,
-        bin.display()
+        bin.display(),
+        popup_bin.display(),
+        popup_bin.display()
     );
     println!("2) Add its name to a bar so it renders (it is ignored otherwise):");
     println!(r#"   "modules-right": ["...", "custom/usage-monitor", "clock"]"#);
     println!("Then reload: killall -SIGUSR2 waybar");
+    println!(
+        "The popup needs Qt for Python (PySide6 or PyQt6); check it with `{} --doctor`.",
+        popup_bin.display()
+    );
     Ok(())
 }
 
@@ -203,10 +225,34 @@ fn install_kde_icon(package_dir: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Desktop entry for the popup window.
+///
+/// Wayland compositors and the XDG portal identify a window by its app id,
+/// which Qt takes from the desktop file name — without an installed entry the
+/// portal refuses the registration and compositor rules matching
+/// `usage-monitor-waybar` have nothing to bind to. `Exec` gets the resolved
+/// path because `~/.local/bin` is not always on the session PATH.
+fn install_waybar_desktop_entry(asset_dir: &Path, popup_bin: &Path) -> Result<()> {
+    let source = asset_dir.join(WAYBAR_DESKTOP_FILE);
+    let template = fs::read_to_string(&source)
+        .with_context(|| format!("read {}", source.display()))?
+        .replace(
+            "Exec=usage-monitor-waybar-popup",
+            &format!("Exec={}", popup_bin.display()),
+        );
+    let dest = waybar_desktop_path()?;
+    if let Some(parent) = dest.parent() {
+        fs::create_dir_all(parent).with_context(|| format!("create {}", parent.display()))?;
+    }
+    fs::write(&dest, template).with_context(|| format!("write {}", dest.display()))
+}
+
 fn uninstall_waybar() -> Result<()> {
     remove_file_if_exists(&waybar_bin_path()?)?;
+    remove_file_if_exists(&waybar_popup_bin_path()?)?;
+    remove_file_if_exists(&waybar_desktop_path()?)?;
     remove_dir_if_exists(&data_home()?.join("usage-monitor/waybar"))?;
-    println!("Waybar wrapper removed");
+    println!("Waybar wrapper and popup removed");
     Ok(())
 }
 
@@ -273,7 +319,15 @@ fn kde_icon_path() -> Result<PathBuf> {
 }
 
 fn waybar_bin_path() -> Result<PathBuf> {
-    Ok(local_bin()?.join("usage-monitor-waybar"))
+    Ok(local_bin()?.join(WAYBAR_BIN))
+}
+
+fn waybar_popup_bin_path() -> Result<PathBuf> {
+    Ok(local_bin()?.join(WAYBAR_POPUP_BIN))
+}
+
+fn waybar_desktop_path() -> Result<PathBuf> {
+    Ok(data_home()?.join(format!("applications/{WAYBAR_DESKTOP_FILE}")))
 }
 
 fn config_home() -> Result<PathBuf> {
@@ -402,7 +456,8 @@ fn replace_symlink(src: &Path, dest: &Path) -> Result<()> {
 #[cfg(unix)]
 fn set_executable_if_needed(path: &Path) -> Result<()> {
     use std::os::unix::fs::PermissionsExt;
-    let executable = path.file_name() == Some(OsStr::new("usage-monitor-waybar"))
+    let executable = path.file_name() == Some(OsStr::new(WAYBAR_BIN))
+        || path.file_name() == Some(OsStr::new(WAYBAR_POPUP_BIN))
         || path.extension() == Some(OsStr::new("py"));
     if executable {
         let mut perms = fs::metadata(path)?.permissions();
@@ -441,6 +496,29 @@ mod tests {
 
         assert!(dest.join("usage-monitor-waybar").is_file());
         assert!(dest.join("usage_monitor_waybar.py").is_file());
+        assert!(dest.join("usage-monitor-waybar-popup").is_file());
+        assert!(dest.join("usage_monitor_waybar_popup.py").is_file());
+        assert!(dest.join("usage_monitor_waybar_data.py").is_file());
+        // The popup UI is a directory of QML plus the bundled logo; a missing
+        // file here means a black window at the first `on-click`.
+        for name in [
+            "Popup.qml",
+            "UsagePage.qml",
+            "UsageBar.qml",
+            "ThemePalette.qml",
+            "ThemedToolButton.qml",
+            "GlyphIcon.qml",
+            "FontPicker.qml",
+            "SettingsWindow.qml",
+            "SettingsGeneral.qml",
+            "SettingsProviders.qml",
+            "SettingsOrder.qml",
+            "SettingsTheme.qml",
+        ] {
+            assert!(dest.join("ui").join(name).is_file(), "missing ui/{name}");
+        }
+        assert!(dest.join("ui/images/usage-monitor.png").is_file());
+        assert!(dest.join("usage-monitor-waybar.desktop").is_file());
         assert!(no_python_cache(&dest));
     }
 
@@ -494,7 +572,12 @@ mod tests {
         let dest = tmp.path().join("waybar");
         write_dir(&WAYBAR, &dest, true).unwrap();
 
-        for name in ["usage-monitor-waybar", "usage_monitor_waybar.py"] {
+        for name in [
+            "usage-monitor-waybar",
+            "usage-monitor-waybar-popup",
+            "usage_monitor_waybar.py",
+            "usage_monitor_waybar_popup.py",
+        ] {
             let mode = fs::metadata(dest.join(name)).unwrap().permissions().mode();
             assert_eq!(mode & 0o111, 0o111, "{name} should be executable");
         }
@@ -564,7 +647,17 @@ mod tests {
             install(WidgetInstallTarget::Waybar, false).unwrap();
             assert_eq!(read_stamp("waybar").unwrap().as_deref(), Some(VERSION));
             assert!(waybar_bin_path().unwrap().is_symlink());
+            assert!(waybar_popup_bin_path().unwrap().is_symlink());
             assert!(autostart_path().unwrap().is_file());
+
+            // The desktop entry is what gives the popup a stable app id for
+            // compositor placement rules and the XDG portal.
+            let desktop = fs::read_to_string(waybar_desktop_path().unwrap()).unwrap();
+            assert!(desktop.contains("StartupWMClass=usage-monitor-waybar"));
+            assert!(desktop.contains(&format!(
+                "Exec={}",
+                waybar_popup_bin_path().unwrap().display()
+            )));
         });
     }
 
@@ -597,6 +690,8 @@ mod tests {
 
             uninstall(WidgetInstallTarget::Waybar).unwrap();
             assert_eq!(read_stamp("waybar").unwrap(), None);
+            assert!(!waybar_popup_bin_path().unwrap().exists());
+            assert!(!waybar_desktop_path().unwrap().exists());
             assert!(
                 !autostart_path().unwrap().exists(),
                 "autostart entry should be removed with the last widget"

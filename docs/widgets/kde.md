@@ -25,8 +25,9 @@ Clicking it opens the full popup, with one card per provider/account:
   the native KDE configuration window).
 - **Settings live in the native KDE config dialog** (right-click → Configure, or
   the popup Settings button), not in the popup, split into four pages:
-  - **General** — refresh interval, show bar text, show account email, pin a
-    provider to the panel bar, clear cache, and the CLI/plasmoid version footer.
+  - **General** — refresh interval, show bar text, show account email, show
+    decimal places, pin a provider to the panel bar, clear cache, and the
+    CLI/plasmoid version footer.
   - **Providers** — search + enable/disable toggles
     (`usage-monitor-cli enable|disable <provider>`) and **Manage accounts** per
     provider: add/remove named accounts with a form shaped per provider auth type
@@ -105,7 +106,8 @@ General/Providers/Order/Theme pages). All settings live in the helper's
 same way the Plasma System Monitor does: each page declares
 `signal configurationChanged` (emitted on edit → enables Apply) and
 `function saveConfig()` (called on Apply/OK → writes the pending values via the
-helper). General (refresh interval, bar text, account email, pin), Order (drag
+helper). General (refresh interval, bar text, account email, decimal places,
+pin), Order (drag
 reorder) and Theme are **Apply-driven**; provider enable/disable, accounts,
 workspaces and clear cache are immediate actions.
 

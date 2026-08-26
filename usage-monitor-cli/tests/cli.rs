@@ -124,7 +124,7 @@ fn test_widget_waybar_without_enabled_providers_outputs_single_json_object() {
     let payload: serde_json::Value = serde_json::from_str(text.trim()).unwrap();
     assert_eq!(payload["text"], "—");
     assert_eq!(payload["class"], "stale");
-    assert_eq!(payload["percentage"], 0);
+    assert_eq!(payload["percentage"], 0.0);
     assert!(
         payload["tooltip"]
             .as_str()

@@ -47,7 +47,7 @@ Both widgets are embedded in the CLI binary (asset tree under
 
 ```bash
 usage-monitor-cli widget install kde      # KDE plasmoid (via kpackagetool6)
-usage-monitor-cli widget install waybar   # Waybar wrapper into ~/.local/bin
+usage-monitor-cli widget install waybar   # Waybar module + popup into ~/.local/bin
 usage-monitor-cli widget install all      # both
 usage-monitor-cli widget uninstall <target>
 usage-monitor-cli widget doctor           # show resolved install paths
@@ -70,4 +70,7 @@ is removed once the last widget is uninstalled.
 - [KDE Plasma 6](kde.md) — native panel widget with settings, toggles,
   multi-account display, provider ordering, pinned target, refresh interval,
   and stale-cache fallback.
-- [Waybar](waybar.md) — wrapper script for a `custom/*` module.
+- [Waybar](waybar.md) — wrapper script for a `custom/*` module, plus a Qt Quick
+  popup (`on-click`) carrying the same interface as the KDE widget: provider
+  cards, cost, and a settings window with General/Providers/Order/Theme pages.
+  The popup needs PySide6 or PyQt6; the bar module does not.

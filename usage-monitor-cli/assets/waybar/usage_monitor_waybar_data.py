@@ -1,32 +1,55 @@
 #!/usr/bin/env python3
-"""Data helper for the Usage Monitor KDE Plasma widget.
+"""Data/theme helper for the Usage Monitor Waybar popup.
 
-Ported from the CodexBar KDE helper. The Plasma UI stays simple QML; this helper
-owns all JSON, CLI, cache and formatting logic so it can be tested without KDE
-running. The presentation layer (summarize/tooltip/bar text/classify) is kept
-from the original; only the data layer is adapted to drive `usage-monitor-cli`.
+Ported from the KDE Plasma helper (`assets/kde/.../usage_monitor_kde.py`): the
+presentation layer (summarize/tooltip/bar text/classify), the provider/account
+discovery and the theme resolution are the same, so both widgets render the same
+information from the same CLI.
+
+What is deliberately different, because Waybar runs outside Plasma and on many
+distributions/compositors:
+
+* State and cache live under `usage-monitor-waybar`, so a machine can run both
+  widgets with independent settings.
+* Theme mode `plasma` ("follow the desktop theme", resolved by Kirigami inside
+  Plasma) is replaced by `system`: there is no Kirigami here, so this helper has
+  to resolve concrete colors itself — from KDE's `kdeglobals` when present, else
+  from the GTK/GNOME dark-mode preference, else a dark default.
+* Binary discovery also looks in the places non-Arch distributions and FreeBSD
+  put user binaries (Nix profiles, `/usr/local/bin`, `/opt/…`), because a
+  compositor-launched process inherits a minimal PATH.
+* Usage data is fetched with `usage-monitor-cli widget waybar` (same payload as
+  `widget kde`, single line).
+
+It is importable and unit-testable without Qt, Waybar or any desktop running.
 """
 
 from __future__ import annotations
 
 import argparse
 import configparser
+import fcntl
 import json
 import math
 import os
 import re
 import subprocess
 import sys
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 from shutil import which
-from typing import Any, Callable
+from typing import Any
 
+POPUP_VERSION = "0.8.0"
 
-PLASMOID_VERSION = "0.8.0"
+# Providers behind subscription plans (Claude, Codex) rate-limit undocumented
+# endpoints hard; the bar module and the popup therefore share one fetched value
+# for this long before anyone calls out again. Overridable per user with the
+# `minFetchIntervalSeconds` state key.
+DEFAULT_MIN_FETCH_SECONDS = 180.0
 
 # usage-monitor has a single auto-detected source per provider, so the Source
 # combo in the settings UI only ever offers "auto".
@@ -66,13 +89,8 @@ CONNECT_HINTS = {
 }
 
 # --------------------------------------------------------------------------
-# Per-provider "add account" metadata for the settings UI.
-#
-# authKind drives the form shape:
-#   api_key / token / cookie -> paste-a-secret form (name + the listed fields)
-#   oauth                    -> CLI-login required; show setupHint + path fields
-#   opencode                 -> token + workspace management
-# Each field: {key, label, secret, placeholder}.
+# Per-provider "add account" metadata for the settings UI (same contract the
+# KDE settings pages use).
 # --------------------------------------------------------------------------
 
 
@@ -105,7 +123,6 @@ _OAUTH_SETUP = {
 }
 
 PROVIDER_AUTH: dict[str, dict[str, Any]] = {
-    # API-key providers
     **{p: {"kind": "api_key", "fields": _API_KEY} for p in (
         "openai", "anthropic", "openrouter", "groq", "deepseek", "kimik2",
         "minimax", "moonshot", "venice", "zai", "elevenlabs",
@@ -115,17 +132,13 @@ PROVIDER_AUTH: dict[str, dict[str, Any]] = {
         "kind": "api_key",
         "fields": [*_API_KEY, _field("base_url", "Base URL", placeholder="https://…")],
     },
-    # token providers
     **{p: {"kind": "token", "fields": _TOKEN} for p in ("grok", "kimi", "copilot", "windsurf")},
     "devin": {"kind": "token", "fields": [*_TOKEN, _field("org", "Organization")]},
-    # cookie providers
     **{p: {"kind": "cookie", "fields": _COOKIE} for p in ("abacus", "mistral", "ollama", "cursor", "perplexity")},
-    # OAuth / CLI providers (account added via terminal login + credentials path)
     "codex": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path", placeholder="~/.codex-NAME/auth.json")], "setupHint": _OAUTH_SETUP["codex"]},
     "claude": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path", placeholder="~/.claude/.credentials.json")], "setupHint": _OAUTH_SETUP["claude"]},
     "gemini": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path"), _field("access_token", "Access token", secret=True)], "setupHint": _OAUTH_SETUP["gemini"]},
     "antigravity": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path"), _field("access_token", "Access token", secret=True)], "setupHint": _OAUTH_SETUP["antigravity"]},
-    # opencode-go: cookie token + workspace management
     "opencode-go": {"kind": "opencode", "fields": [_field("token", "Session cookie", secret=True)]},
 }
 
@@ -141,6 +154,8 @@ class Paths:
     state: Path
     cache_dir: Path
     last_good: Path
+    meta: Path
+    lock: Path
 
 
 def xdg_path(env_name: str, fallback: Path) -> Path:
@@ -152,11 +167,13 @@ def paths() -> Paths:
     home = Path.home()
     config_home = xdg_path("XDG_CONFIG_HOME", home / ".config")
     cache_home = xdg_path("XDG_CACHE_HOME", home / ".cache")
-    cache_dir = cache_home / "usage-monitor-kde"
+    cache_dir = cache_home / "usage-monitor-waybar"
     return Paths(
-        state=config_home / "usage-monitor-kde" / "state.json",
+        state=config_home / "usage-monitor-waybar" / "state.json",
         cache_dir=cache_dir,
         last_good=cache_dir / "last.json",
+        meta=cache_dir / "meta.json",
+        lock=cache_dir / "fetch.lock",
     )
 
 
@@ -185,13 +202,21 @@ def write_json(path: Path, payload: Any) -> None:
 # CLI discovery + execution
 # --------------------------------------------------------------------------
 
-# Plasma launches the plasmoid with a minimal PATH that usually omits
-# ~/.cargo/bin and ~/.local/bin, so `which` alone is not enough.
+# A popup started from Waybar inherits the compositor's environment, which on
+# most session setups omits ~/.cargo/bin and ~/.local/bin — and the "usual"
+# prefixes differ per OS: Nix/NixOS keep binaries in profiles, FreeBSD and many
+# source installs use /usr/local/bin, Ubuntu adds /snap/bin.
 _SEARCH_DIRS = (
     Path.home() / ".cargo" / "bin",
-    Path("/usr/bin"),
-    Path("/usr/local/bin"),
     Path.home() / ".local" / "bin",
+    Path.home() / "bin",
+    Path.home() / ".nix-profile" / "bin",
+    Path("/run/current-system/sw/bin"),  # NixOS
+    Path("/usr/bin"),
+    Path("/usr/local/bin"),  # FreeBSD ports, source installs
+    Path("/opt/local/bin"),
+    Path("/snap/bin"),
+    Path("/var/lib/flatpak/exports/bin"),
 )
 _BINARY_NAMES = ("usage-monitor-cli", "usage-monitor")
 
@@ -226,7 +251,9 @@ def run_cli(args: list[str], timeout: int = 60) -> subprocess.CompletedProcess[s
             "Build it (`cargo install --path usage-monitor-cli`) or set USAGE_MONITOR_BIN "
             "to the full path of the binary.",
         )
-    except Exception as exc:  # pragma: no cover - defensive
+    except subprocess.TimeoutExpired:
+        return subprocess.CompletedProcess(cmd, 1, "", f"usage-monitor-cli timed out after {timeout}s")
+    except OSError as exc:
         return subprocess.CompletedProcess(cmd, 1, "", str(exc))
 
 
@@ -255,8 +282,23 @@ def state_value(state_path: Path | None = None, key: str = "barProvider", defaul
     return str(value) if value is not None else default
 
 
-def _write_state(payload: dict[str, Any], state_path: Path | None = None) -> None:
+def write_state(payload: dict[str, Any], state_path: Path | None = None) -> None:
     write_json(_state_path(state_path), payload)
+
+
+def set_state_key(key: str, value: Any, state_path: Path | None = None) -> dict[str, Any]:
+    sf = state_full(state_path)
+    sf[str(key)] = value
+    write_state(sf, state_path)
+    return sf
+
+
+def set_state_keys(pairs: list[tuple[str, Any]], state_path: Path | None = None) -> dict[str, Any]:
+    sf = state_full(state_path)
+    for key, value in pairs:
+        sf[str(key)] = value
+    write_state(sf, state_path)
+    return sf
 
 
 def _provider_order() -> list[str]:
@@ -292,14 +334,18 @@ def _sort_by_order(providers: list[dict[str, Any]]) -> list[dict[str, Any]]:
 # Theming
 #
 # Four modes, all resolved here so the QML only ever reads final values:
-#   plasma  -> follow the desktop theme (no colors emitted; QML uses Kirigami)
+#   system  -> follow the desktop: KDE color scheme when the session has one,
+#              otherwise the GTK/GNOME dark preference mapped to a bundled
+#              light/dark palette. Unlike the Plasma widget, "follow the
+#              desktop" still emits concrete colors: plain Qt Quick has no
+#              Kirigami palette to inherit from.
 #   builtin -> one of BUILTIN_THEMES
-#   scheme  -> a KDE color scheme already installed on the system (including
-#              third-party ones from the KDE Store, e.g. the macOS look-alikes)
-#   custom  -> per-key overrides stored in state.json (themeCustom* keys)
+#   scheme  -> a KDE .colors scheme / Plasma desktop theme installed on the
+#              system (present on any distro that has KDE apps installed)
+#   custom  -> named palettes stored in state.json
 # --------------------------------------------------------------------------
 
-THEME_MODES = ("plasma", "builtin", "scheme", "custom")
+THEME_MODES = ("system", "builtin", "scheme", "custom")
 
 THEME_COLOR_KEYS = ("background", "text", "subtext", "accent", "warning", "critical", "track", "border")
 
@@ -390,9 +436,40 @@ BUILTIN_THEMES: dict[str, dict[str, Any]] = {
             "border": "#292e42",
         },
     ),
+    "gruvbox-dark": _builtin(
+        "Gruvbox Dark",
+        True,
+        {
+            "background": "#282828",
+            "text": "#ebdbb2",
+            "subtext": "#a89984",
+            "accent": "#83a598",
+            "warning": "#fabd2f",
+            "critical": "#fb4934",
+            "track": "#3c3836",
+            "border": "#504945",
+        },
+    ),
+    "catppuccin-mocha": _builtin(
+        "Catppuccin Mocha",
+        True,
+        {
+            "background": "#1e1e2e",
+            "text": "#cdd6f4",
+            "subtext": "#a6adc8",
+            "accent": "#89b4fa",
+            "warning": "#f9e2af",
+            "critical": "#f38ba8",
+            "track": "#313244",
+            "border": "#45475a",
+        },
+    ),
 }
 
 DEFAULT_BUILTIN = "macos-dark"
+# The palettes "follow the desktop" maps the GTK/GNOME dark preference to.
+SYSTEM_DARK_BUILTIN = "macos-dark"
+SYSTEM_LIGHT_BUILTIN = "macos-light"
 
 # Only the forms QColor actually parses: #rgb, #rrggbb, #aarrggbb. A 4-digit
 # "#argb" is not one of them, so it must not be let through.
@@ -536,7 +613,12 @@ def _desktop_theme_entry(theme_dir: Path) -> dict[str, Any] | None:
 
 
 def installed_schemes() -> list[dict[str, Any]]:
-    """Every KDE color scheme / Plasma desktop theme installed for this user."""
+    """Every KDE color scheme / Plasma desktop theme installed for this user.
+
+    Kept for Waybar because these files are plain INI in XDG data dirs: they are
+    there on any distribution where KDE apps (or just the scheme packages) are
+    installed, no Plasma session required. The list is simply empty elsewhere.
+    """
     found: dict[str, dict[str, Any]] = {}
     for base in _data_dirs():
         for path in sorted((base / "color-schemes").glob("*.colors")):
@@ -551,11 +633,7 @@ def installed_schemes() -> list[dict[str, Any]]:
 
 
 def find_scheme(scheme_id: str) -> dict[str, Any] | None:
-    """Resolve one scheme id straight to its file.
-
-    The id carries the file stem, so the widget's refresh path never has to scan
-    (and re-parse) every installed scheme just to render the selected one.
-    """
+    """Resolve one scheme id straight to its file (no full scan on refresh)."""
     scheme_id = str(scheme_id or "")
     kind, _, name = scheme_id.partition(":")
     if not name or "/" in name or name in (".", ".."):
@@ -580,60 +658,130 @@ def _scheme_entry(scheme_id: str, schemes: list[dict[str, Any]] | None = None) -
     return next((scheme for scheme in schemes if scheme.get("id") == scheme_id), None)
 
 
+# ---- "follow the desktop" on a non-Plasma session -------------------------
+
+
+def desktop_environment() -> str:
+    """Lowercased desktop id, e.g. "hyprland", "sway", "kde", "gnome" or ""."""
+    for name in ("XDG_CURRENT_DESKTOP", "XDG_SESSION_DESKTOP", "DESKTOP_SESSION"):
+        value = str(os.environ.get(name, "") or "").strip()
+        if value:
+            return value.split(":")[0].lower()
+    if os.environ.get("HYPRLAND_INSTANCE_SIGNATURE"):
+        return "hyprland"
+    if os.environ.get("SWAYSOCK"):
+        return "sway"
+    return ""
+
+
+def session_type() -> str:
+    """"wayland", "x11" or "" — decides how the popup can be positioned."""
+    value = str(os.environ.get("XDG_SESSION_TYPE", "") or "").strip().lower()
+    if value in ("wayland", "x11"):
+        return value
+    if os.environ.get("WAYLAND_DISPLAY"):
+        return "wayland"
+    if os.environ.get("DISPLAY"):
+        return "x11"
+    return ""
+
+
+def _gsettings_value(schema: str, key: str) -> str:
+    binary = which("gsettings")
+    if not binary:
+        return ""
+    try:
+        proc = subprocess.run(
+            [binary, "get", schema, key], capture_output=True, text=True, timeout=5, check=False
+        )
+    except (OSError, subprocess.TimeoutExpired):
+        return ""
+    if proc.returncode != 0:
+        return ""
+    return proc.stdout.strip().strip("'\"")
+
+
+def prefers_dark() -> bool:
+    """Whether the session asks for a dark palette.
+
+    Checked in the order a desktop actually sets it: explicit override first,
+    then the freedesktop/GNOME `color-scheme` preference (honoured by GNOME,
+    Cinnamon, most wlroots setups via portals), then the GTK theme name, then
+    the GTK 3 settings file. Defaults to dark, which is what bars normally are.
+    """
+    override = str(os.environ.get("USAGE_MONITOR_DARK", "") or "").strip().lower()
+    if override in ("1", "true", "yes", "dark"):
+        return True
+    if override in ("0", "false", "no", "light"):
+        return False
+
+    scheme = _gsettings_value("org.gnome.desktop.interface", "color-scheme").lower()
+    if scheme:
+        if "dark" in scheme:
+            return True
+        if "light" in scheme:
+            return False
+
+    gtk_theme = _gsettings_value("org.gnome.desktop.interface", "gtk-theme").lower()
+    if gtk_theme:
+        return "dark" in gtk_theme
+
+    settings_ini = xdg_path("XDG_CONFIG_HOME", Path.home() / ".config") / "gtk-3.0" / "settings.ini"
+    parser = _read_ini(settings_ini)
+    if parser is not None:
+        prefer = parser.get("Settings", "gtk-application-prefer-dark-theme", fallback="").strip()
+        if prefer in ("1", "true"):
+            return True
+        theme_name = parser.get("Settings", "gtk-theme-name", fallback="").strip().lower()
+        if theme_name:
+            return "dark" in theme_name
+    return True
+
+
+def kde_session_colors() -> dict[str, str]:
+    """Colors from the user's `kdeglobals`, when the session has one."""
+    config_home = xdg_path("XDG_CONFIG_HOME", Path.home() / ".config")
+    parser = _read_ini(config_home / "kdeglobals")
+    return _scheme_colors(parser) if parser else {}
+
+
+def system_theme() -> dict[str, Any]:
+    """The palette "follow the desktop" resolves to on this session."""
+    colors = kde_session_colors()
+    if colors:
+        dark = is_dark(colors["background"])
+        return {
+            "id": "system:kdeglobals",
+            "name": "Desktop colors (KDE)",
+            "dark": dark,
+            "colors": colors,
+            "font": dict(DEFAULT_FONT),
+            "metrics": dict(DEFAULT_METRICS),
+        }
+    dark = prefers_dark()
+    builtin_id = SYSTEM_DARK_BUILTIN if dark else SYSTEM_LIGHT_BUILTIN
+    theme = BUILTIN_THEMES[builtin_id]
+    return {
+        "id": f"system:{builtin_id}",
+        "name": "Desktop colors (dark)" if dark else "Desktop colors (light)",
+        "dark": dark,
+        "colors": dict(theme["colors"]),
+        "font": dict(theme["font"]),
+        "metrics": dict(theme["metrics"]),
+    }
+
+
 def _number(raw: Any, fallback: float) -> float:
     """Parse a number, rejecting nan/inf.
 
-    `float("inf")` and `float("nan")` are serialized by json.dump as bare
-    Infinity/NaN, which QML's JSON.parse rejects — a single such value in
-    state.json would break every helper command, with no way back from the UI.
+    `float("inf")`/`float("nan")` serialize as bare Infinity/NaN, which QML's
+    JSON.parse rejects — one such value in state.json would break every payload.
     """
     try:
         value = float(str(raw).strip())
     except (TypeError, ValueError):
         return fallback
     return value if math.isfinite(value) else fallback
-
-
-def _custom_colors(sf: Mapping[str, Any]) -> dict[str, str]:
-    overrides: dict[str, str] = {}
-    for key in THEME_COLOR_KEYS:
-        value = color_value(sf.get(f"themeCustom{key.capitalize()}", ""))
-        if value:
-            overrides[key] = value
-    return overrides
-
-
-def _legacy_custom_theme(sf: Mapping[str, Any]) -> dict[str, Any] | None:
-    """The pre-`customThemes` single custom palette, as a named theme.
-
-    Widgets configured before named custom themes existed keep their colors: the
-    flat `themeCustom*` keys are surfaced as one theme called "Custom", which the
-    user can then rename, duplicate or delete like any other.
-    """
-    colors = _custom_colors(sf)
-    font = {
-        "family": str(sf.get("themeCustomFontFamily", "") or ""),
-        "size": _number(sf.get("themeCustomFontSize", 0), 0),
-        "headingSize": _number(sf.get("themeCustomHeadingSize", 0), 0),
-        "smallSize": _number(sf.get("themeCustomSmallSize", 0), 0),
-    }
-    metrics = {
-        "barHeight": _number(sf.get("themeCustomBarHeight", DEFAULT_METRICS["barHeight"]), DEFAULT_METRICS["barHeight"]),
-        "radius": _number(sf.get("themeCustomRadius", DEFAULT_METRICS["radius"]), DEFAULT_METRICS["radius"]),
-        "opacity": max(0.1, min(1.0, _number(sf.get("themeCustomOpacity", 1.0), 1.0))),
-    }
-    touched = bool(colors) or bool(font["family"]) or any(font[k] for k in ("size", "headingSize", "smallSize"))
-    touched = touched or metrics != dict(DEFAULT_METRICS)
-    if not touched:
-        return None
-    return sanitize_custom_theme({
-        "id": "custom",
-        "name": "Custom",
-        "base": str(sf.get("themeBuiltin", "") or DEFAULT_BUILTIN),
-        "colors": colors,
-        "font": font,
-        "metrics": metrics,
-    })
 
 
 def sanitize_custom_theme(raw: Any, index: int = 0) -> dict[str, Any] | None:
@@ -672,14 +820,9 @@ def custom_themes(sf: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
     sf = sf if isinstance(sf, Mapping) else state_full()
     raw = sf.get("customThemes", "")
     parsed: Any = raw
-    # An explicit (even empty) list means the user has managed their themes in
-    # the config page; only a missing/unparsable key falls back to the legacy
-    # flat keys, so deleting the last theme does not resurrect the old palette.
-    stored_list = isinstance(raw, list)
     if isinstance(raw, str):
         try:
             parsed = json.loads(raw) if raw.strip() else None
-            stored_list = isinstance(parsed, list)
         except json.JSONDecodeError:
             parsed = None
     themes: list[dict[str, Any]] = []
@@ -689,10 +832,6 @@ def custom_themes(sf: Mapping[str, Any] | None = None) -> list[dict[str, Any]]:
         if theme and theme["id"] not in seen:
             seen.add(theme["id"])
             themes.append(theme)
-    if not themes and not stored_list:
-        legacy = _legacy_custom_theme(sf)
-        if legacy:
-            themes.append(legacy)
     return themes
 
 
@@ -716,11 +855,7 @@ def theme_payload(mode: str, theme_id: str, name: str, dark: bool, colors: dict[
 
 
 def global_opacity(sf: Mapping[str, Any], fallback: float = 1.0) -> float:
-    """Background opacity for every mode (the Theme page's transparency slider).
-
-    Kept outside the themes themselves so it also applies to "follow the desktop
-    theme", where the widget has no palette of its own.
-    """
+    """Background opacity for every mode (the Theme page's transparency slider)."""
     raw = sf.get("themeOpacity", "")
     if raw is None or str(raw).strip() == "":
         return max(0.1, min(1.0, fallback))
@@ -731,17 +866,22 @@ def resolve_theme(sf: Mapping[str, Any] | None = None,
                   schemes: list[dict[str, Any]] | None = None) -> dict[str, Any]:
     """Turn the theme state keys into the final palette the QML renders with."""
     sf = sf if isinstance(sf, Mapping) else state_full()
-    mode = str(sf.get("themeMode", "plasma") or "plasma")
+    mode = str(sf.get("themeMode", "system") or "system")
     if mode not in THEME_MODES:
-        mode = "plasma"
+        mode = "system"
 
     def with_opacity(payload: dict[str, Any], fallback: float = 1.0) -> dict[str, Any]:
         payload["metrics"] = {**payload["metrics"], "opacity": global_opacity(sf, fallback)}
         return payload
 
-    if mode == "plasma":
-        return with_opacity(theme_payload("plasma", "", "Current desktop theme", False, {},
-                                          dict(DEFAULT_FONT), dict(DEFAULT_METRICS)))
+    def system_payload() -> dict[str, Any]:
+        theme = system_theme()
+        return with_opacity(theme_payload("system", theme["id"], theme["name"], theme["dark"],
+                                          dict(theme["colors"]), dict(theme["font"]),
+                                          dict(theme["metrics"])))
+
+    if mode == "system":
+        return system_payload()
 
     if mode == "builtin":
         theme_id = str(sf.get("themeBuiltin", DEFAULT_BUILTIN) or DEFAULT_BUILTIN)
@@ -758,9 +898,8 @@ def resolve_theme(sf: Mapping[str, Any] | None = None,
         colors = dict(entry["colors"]) if entry and entry.get("colors") else {}
         if not colors:
             # The scheme was uninstalled (or never resolved) — fall back to the
-            # desktop theme rather than rendering an unreadable palette.
-            return with_opacity(theme_payload("plasma", "", "Current desktop theme", False, {},
-                                              dict(DEFAULT_FONT), dict(DEFAULT_METRICS)))
+            # desktop colors rather than rendering an unreadable palette.
+            return system_payload()
         name = str(entry.get("name") or scheme_id)
         return with_opacity(theme_payload("scheme", scheme_id, name, is_dark(colors["background"]),
                                           colors, dict(DEFAULT_FONT), dict(DEFAULT_METRICS)))
@@ -768,15 +907,13 @@ def resolve_theme(sf: Mapping[str, Any] | None = None,
     themes = custom_themes(sf)
     if not themes:
         # Custom selected but nothing defined yet: show the base theme rather
-        # than an empty palette, so the widget stays readable.
+        # than an empty palette, so the popup stays readable.
         base = BUILTIN_THEMES.get(str(sf.get("themeBuiltin", "") or ""), BUILTIN_THEMES[DEFAULT_BUILTIN])
         return with_opacity(theme_payload("custom", "", "Custom", base["dark"], dict(base["colors"]),
                                           dict(DEFAULT_FONT), dict(DEFAULT_METRICS)))
     wanted = str(sf.get("themeCustomId", "") or "")
     theme = next((t for t in themes if t["id"] == wanted), themes[0])
     colors = custom_theme_colors(theme)
-    # A theme saved before the global slider existed keeps its own opacity until
-    # the slider is touched.
     return with_opacity(
         theme_payload("custom", theme["id"], theme["name"], is_dark(colors["background"]),
                       colors, dict(theme["font"]), dict(theme["metrics"])),
@@ -788,8 +925,8 @@ def theme_catalog(schemes: list[dict[str, Any]] | None = None,
                   sf: Mapping[str, Any] | None = None) -> dict[str, Any]:
     catalog = schemes if schemes is not None else installed_schemes()
     return {
-        # font/metrics travel with each built-in so the settings preview can
-        # mirror exactly what resolve_theme() will apply (corner radius, sizes).
+        # font/metrics travel with each built-in so the settings preview mirrors
+        # exactly what resolve_theme() will apply (corner radius, sizes).
         "builtin": [
             {
                 "id": theme_id,
@@ -803,12 +940,13 @@ def theme_catalog(schemes: list[dict[str, Any]] | None = None,
         ],
         "schemes": catalog,
         "custom": custom_themes(sf),
+        "system": system_theme(),
         "colorKeys": list(THEME_COLOR_KEYS),
     }
 
 
 # --------------------------------------------------------------------------
-# Fetch + entry shaping (usage-monitor-cli widget JSON -> codexbar entry shape)
+# Fetch + entry shaping (usage-monitor-cli widget JSON -> popup entry shape)
 # --------------------------------------------------------------------------
 
 Runner = Callable[[list[str]], subprocess.CompletedProcess[str]]
@@ -840,9 +978,6 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
             "resetsAt": None,
             "resetDescription": str(window.get("resets_at") or ""),
         }
-    # Prefer the real account email (e.g. Codex id_token) for identification,
-    # falling back to a configured label/id, then the plan as a last resort so
-    # every provider shows something under its name.
     identity = item.get("account_email") or item.get("account_label") or item.get("account_id") or ""
     usage["identity"] = {
         "accountEmail": str(identity or ""),
@@ -855,8 +990,6 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
     }
     if item.get("error"):
         entry["error"] = {"message": str(item.get("error"))}
-    # Carry the CLI's own max so providers whose windows don't map cleanly to the
-    # three slots still report a sane headline percentage.
     cli_max = _percent(item.get("max_percentage"))
     if cli_max is not None:
         entry["_cliMaxPercent"] = cli_max
@@ -864,7 +997,7 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
 
 
 def fetch_entries(runner: Runner = run_cli) -> list[dict[str, Any]]:
-    proc = runner(["widget", "kde"])
+    proc = runner(["widget", "waybar"])
     if proc.returncode != 0 and not proc.stdout.strip():
         return [{"provider": "", "error": {"message": (proc.stderr or "usage-monitor-cli failed").strip()}}]
     try:
@@ -916,7 +1049,7 @@ def merge_with_cache(entries: list[dict[str, Any]], requested: list[str], last_g
 
 
 # --------------------------------------------------------------------------
-# Presentation (kept from the original CodexBar helper)
+# Presentation
 # --------------------------------------------------------------------------
 
 
@@ -956,9 +1089,7 @@ def max_percent(entry: dict[str, Any]) -> float:
     return best
 
 
-def pct_label(value: float, decimals: bool = True) -> str:
-    if not decimals:
-        return f"{round(value)}%"
+def pct_label(value: float) -> str:
     return f"{int(value)}%" if float(value).is_integer() else f"{value:.1f}%"
 
 
@@ -978,7 +1109,7 @@ def reset_text(window: dict[str, Any] | None) -> str:
     return dt.strftime("%b %d at %H:%M %Z")
 
 
-def tooltip_lines(entries: list[dict[str, Any]], decimals: bool = True) -> list[str]:
+def tooltip_lines(entries: list[dict[str, Any]]) -> list[str]:
     lines: list[str] = []
     for entry in entries:
         name = provider_name(entry.get("provider"))
@@ -999,21 +1130,21 @@ def tooltip_lines(entries: list[dict[str, Any]], decimals: bool = True) -> list[
                 continue
             suffix = reset_text(window)
             stale = " (stale)" if entry.get("stale") else ""
-            lines.append(f"{name} {label.lower()}: {pct_label(percent, decimals)}" + (f" — {suffix}" if suffix else "") + stale)
+            lines.append(f"{name} {label.lower()}: {pct_label(percent)}" + (f" — {suffix}" if suffix else "") + stale)
     return lines
 
 
-def bar_text(entries: list[dict[str, Any]], pinned_provider: str = "", decimals: bool = True) -> str:
+def bar_text(entries: list[dict[str, Any]], pinned_provider: str = "") -> str:
     pinned = next((entry for entry in entries if pinned_provider and entry.get("provider") == pinned_provider), None)
     if pinned and not pinned.get("error"):
         values = [window_percent(pinned, key) for key in WINDOW_LABELS]
         values = [value for value in values if value is not None]
         if values:
-            return " • ".join(pct_label(value, decimals) for value in values)
-        return pct_label(max_percent(pinned), decimals)
+            return " • ".join(pct_label(value) for value in values)
+        return pct_label(max_percent(pinned))
     usable = [max_percent(entry) for entry in entries if not entry.get("error")]
     if usable:
-        return pct_label(max(usable), decimals)
+        return pct_label(max(usable))
     return "⚠"
 
 
@@ -1043,12 +1174,12 @@ def enrich_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return enriched
 
 
-def summarize(entries: list[dict[str, Any]], pinned_provider: str = "", decimals: bool = True) -> dict[str, Any]:
+def summarize(entries: list[dict[str, Any]], pinned_provider: str = "") -> dict[str, Any]:
     pct = max([max_percent(entry) for entry in entries if not entry.get("error")], default=0.0)
-    lines = tooltip_lines(entries, decimals)
+    lines = tooltip_lines(entries)
     providers = enrich_entries(entries)
     return {
-        "text": bar_text(providers, pinned_provider, decimals),
+        "text": bar_text(providers, pinned_provider),
         "tooltip": "\n".join(lines) if lines else "Usage Monitor: no provider data",
         "class": classify(providers),
         "percentage": pct,
@@ -1179,8 +1310,6 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
             "userSource": sf.get(f"source:{provider_id}", ""),
             "availableSources": list(DEFAULT_AVAILABLE_SOURCES),
             "userAccount": sf.get(f"account:{provider_id}", ""),
-            "linuxSupported": True,
-            "linuxUnsupportedMessage": "",
             "accountText": account_text_for(accounts),
             "accounts": accounts,
             "connectHint": connect_hint(provider_id),
@@ -1201,18 +1330,24 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
         "pinnableProviders": pinnable,
         "pinnedProvider": sf.get("barProvider", ""),
         "refreshIntervalSeconds": int(sf.get("refreshIntervalSeconds", "30") or "30"),
+        "minFetchIntervalSeconds": int(min_fetch_interval(sf)),
         "allAccounts": sf.get("allAccounts", "true") != "false",
         "statusPages": sf.get("statusPages", "false") == "true",
         "noCredits": sf.get("noCredits", "false") == "true",
         "showBarText": sf.get("showBarText", "true") != "false",
         "showAccountEmail": sf.get("showAccountEmail", "true") != "false",
-        "showDecimals": sf.get("showDecimals", "true") != "false",
         "providerOrder": sf.get("providerOrder", "[]"),
+        "popupAnchor": str(sf.get("popupAnchor", "auto") or "auto"),
+        "keepOpen": sf.get("keepOpen", "false") == "true",
         "theme": resolve_theme(sf, schemes),
         "themeCatalog": theme_catalog(schemes, sf),
         "themeState": {key: str(value) for key, value in sf.items() if str(key).startswith("theme")},
-        "plasmoidVersion": PLASMOID_VERSION,
+        "popupVersion": POPUP_VERSION,
         "cliVersion": cli_ver,
+        "session": {
+            "desktop": desktop_environment(),
+            "type": session_type(),
+        },
         "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
 
@@ -1234,7 +1369,7 @@ def cli_version() -> str:
 
 
 def cost_entries(runner: Runner = run_cli) -> list[dict[str, Any]]:
-    proc = runner(["widget", "kde"])
+    proc = runner(["widget", "waybar"])
     if proc.returncode != 0:
         return []
     try:
@@ -1250,32 +1385,199 @@ def cost_entries(runner: Runner = run_cli) -> list[dict[str, Any]]:
 
 
 # --------------------------------------------------------------------------
-# Commands
+# High-level payloads (used in-process by the popup and by the CLI below)
+# --------------------------------------------------------------------------
+
+
+def cache_age_seconds() -> float | None:
+    """Seconds since the last successful provider fetch, or None if never."""
+    meta = load_json(paths().meta, {})
+    fetched_at = meta.get("fetchedAt") if isinstance(meta, dict) else None
+    if not fetched_at:
+        return None
+    try:
+        stamp = datetime.fromisoformat(str(fetched_at).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    return max(0.0, (datetime.now(timezone.utc) - stamp).total_seconds())
+
+
+def _record_fetch(ok: bool) -> None:
+    """Stamp the attempt, successful or not.
+
+    Recording failures too is deliberate: when a provider answers "rate limited",
+    retrying every 30 s is what keeps it rate-limited. The interval backs off the
+    next attempt either way, and the cached values keep the bar readable
+    meanwhile.
+    """
+    write_json(paths().meta, {
+        "fetchedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "ok": bool(ok),
+    })
+
+
+def min_fetch_interval(sf: Mapping[str, Any] | None = None) -> float:
+    """How long a fetched value is reused before providers are hit again.
+
+    The bar module and the popup are separate processes on their own timers, so
+    without this they would both poll every interval. Provider endpoints behind
+    subscription plans (Claude, Codex) rate-limit aggressively below a few
+    minutes, and a rate-limited fetch turns every provider into an error — which
+    is what makes a bar flip to "⚠" while the numbers were fine a second ago.
+    """
+    sf = sf if isinstance(sf, Mapping) else state_full()
+    return max(0.0, _number(sf.get("minFetchIntervalSeconds", DEFAULT_MIN_FETCH_SECONDS),
+                            DEFAULT_MIN_FETCH_SECONDS))
+
+
+def _fetch_lock(path: Path):
+    """Non-blocking inter-process lock; returns the file handle or None.
+
+    Two processes fetching at once is exactly the pattern that trips provider
+    rate limits, so the loser serves the cache instead of queueing.
+    """
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        handle = path.open("a+")
+    except OSError:
+        return None
+    try:
+        fcntl.flock(handle, fcntl.LOCK_EX | fcntl.LOCK_NB)
+    except OSError:
+        handle.close()
+        return None
+    return handle
+
+
+def _release_lock(handle) -> None:
+    try:
+        fcntl.flock(handle, fcntl.LOCK_UN)
+    finally:
+        handle.close()
+
+
+def summary_payload(force: bool = False) -> dict[str, Any]:
+    """Current usage, fetching only when the cached value is old enough.
+
+    `force` is what the popup's Refresh button passes: an explicit user action
+    always hits the providers.
+    """
+    p = paths()
+    sf = state_full(p.state)
+    age = cache_age_seconds()
+
+    # The interval applies even with an empty cache: the stamp records failed
+    # attempts too, and a provider that just answered "rate limited" must not be
+    # asked again on the next tick.
+    if not force and age is not None and age < min_fetch_interval(sf):
+        payload = cache_payload()
+        payload["cached"] = True
+        payload["cacheAgeSeconds"] = round(age)
+        return payload
+
+    handle = _fetch_lock(p.lock)
+    if handle is None:
+        # Another process is fetching right now; its result lands in the shared
+        # cache, so serve that instead of a second round of provider calls.
+        payload = cache_payload()
+        payload["cached"] = True
+        if age is not None:
+            payload["cacheAgeSeconds"] = round(age)
+        return payload
+
+    try:
+        entries = fetch_entries()
+        requested = [e.get("provider") for e in entries if e.get("provider")]
+        merged = merge_with_cache(entries, requested, p.last_good)
+        if not requested:
+            # The CLI as a whole failed (missing binary, crash, unparsable
+            # output), so there is no per-provider entry to attach the cache to.
+            # Show the last good values as stale and keep the error in the
+            # tooltip — the bar must not drop to "⚠" over one bad call.
+            cached = load_json(p.last_good, [])
+            if isinstance(cached, list):
+                merged = [dict(e, stale=True) for e in cached if isinstance(e, dict)] + merged
+        _record_fetch(bool(successful_entries(entries)))
+        payload = summarize(merged, str(sf.get("barProvider", "") or ""))
+        payload["theme"] = resolve_theme(sf)
+        payload["cached"] = False
+        return payload
+    finally:
+        _release_lock(handle)
+
+
+def cache_payload() -> dict[str, Any]:
+    cached = load_json(paths().last_good, [])
+    sf = state_full(paths().state)
+    payload = summarize(cached if isinstance(cached, list) else [], str(sf.get("barProvider", "") or ""))
+    payload["theme"] = resolve_theme(sf)
+    return payload
+
+
+def cost_payload() -> dict[str, Any]:
+    return {
+        "cost": cost_entries(),
+        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+    }
+
+
+def set_provider_enabled(provider_id: str, enabled: bool) -> subprocess.CompletedProcess[str]:
+    return run_cli(["enable" if enabled else "disable", provider_id])
+
+
+def account_save(provider_id: str, name: str, label: str, values: Mapping[str, Any]) -> subprocess.CompletedProcess[str]:
+    """Add a named account (idempotent) and set its config keys in one call."""
+    add_cmd = [provider_id, "account", "add", name]
+    if label:
+        add_cmd += ["--label", label]
+    run_cli(add_cmd)  # tolerates "already exists"
+    last = subprocess.CompletedProcess([], 0, "", "")
+    for key, value in values.items():
+        if value is None or str(value) == "":
+            continue
+        last = run_cli([provider_id, "account", "set", name, str(key), str(value)])
+        if last.returncode != 0:
+            return last
+    return last
+
+
+def account_remove(provider_id: str, name: str) -> subprocess.CompletedProcess[str]:
+    return run_cli([provider_id, "account", "remove", name])
+
+
+def workspace_add(workspace: str, name: str = "", account: str = "") -> subprocess.CompletedProcess[str]:
+    cmd = ["opencode-go", "workspace", "add", workspace]
+    if name:
+        cmd.append(name)
+    if account:
+        cmd += ["--account", account]
+    return run_cli(cmd)
+
+
+def workspace_remove(workspace: str, account: str = "") -> subprocess.CompletedProcess[str]:
+    cmd = ["opencode-go", "workspace", "remove", workspace]
+    if account:
+        cmd += ["--account", account]
+    return run_cli(cmd)
+
+
+def cache_clear() -> None:
+    write_json(paths().last_good, [])
+
+
+# --------------------------------------------------------------------------
+# Commands (the popup calls the functions above directly; this CLI exists for
+# debugging and for shell users who want the same JSON)
 # --------------------------------------------------------------------------
 
 
 def command_summary(args: argparse.Namespace) -> int:
-    p = paths()
-    entries = fetch_entries()
-    requested = [e.get("provider") for e in entries if e.get("provider")]
-    merged = merge_with_cache(entries, requested, p.last_good)
-    sf = state_full(p.state)
-    decimals = sf.get("showDecimals", "true") != "false"
-    payload = summarize(merged, str(sf.get("barProvider", "") or ""), decimals=decimals)
-    # The panel bar is themed from the summary so it does not have to wait for
-    # the (much slower) settings payload.
-    payload["theme"] = resolve_theme(sf)
-    _dump(payload)
+    _dump(summary_payload(force=bool(getattr(args, "force", False))))
     return 0
 
 
 def command_cache(args: argparse.Namespace) -> int:
-    cached = load_json(paths().last_good, [])
-    sf = state_full(paths().state)
-    decimals = sf.get("showDecimals", "true") != "false"
-    payload = summarize(cached if isinstance(cached, list) else [], str(sf.get("barProvider", "") or ""), decimals=decimals)
-    payload["theme"] = resolve_theme(sf)
-    _dump(payload)
+    _dump(cache_payload())
     return 0
 
 
@@ -1297,104 +1599,44 @@ def command_state(args: argparse.Namespace) -> int:
 
 
 def command_set_state(args: argparse.Namespace) -> int:
-    sf = state_full()
-    if args.key:
-        sf[args.key] = args.value
-    _write_state(sf)
+    set_state_key(args.key, args.value)
     _dump({"status": "ok", "key": args.key, "value": args.value})
     return 0
 
 
 def command_batch_set_state(args: argparse.Namespace) -> int:
-    sf = state_full()
-    for key, value in json.loads(args.json):
-        sf[str(key)] = value
-    _write_state(sf)
+    set_state_keys([(str(key), value) for key, value in json.loads(args.json)])
     _dump({"status": "ok"})
     return 0
 
 
-def command_set_provider(args: argparse.Namespace) -> int:
-    enabled = args.enabled if isinstance(args.enabled, bool) else str(args.enabled).lower() == "true"
-    action = "enable" if enabled else "disable"
-    proc = run_cli([action, args.provider])
-    if proc.returncode != 0:
-        print((proc.stderr or proc.stdout or f"{action} failed").strip(), file=sys.stderr)
-        return proc.returncode or 1
-    return command_settings(args)
-
-
 def command_cost(args: argparse.Namespace) -> int:
-    payload = {
-        "cost": cost_entries(),
-        "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
-    }
-    _dump(payload)
+    _dump(cost_payload())
     return 0
 
 
 def command_cache_clear(args: argparse.Namespace) -> int:
-    write_json(paths().last_good, [])
+    cache_clear()
     _dump({})
     return 0
 
 
-def command_account_save(args: argparse.Namespace) -> int:
-    """Add a named account (idempotent) and set its config keys in one call."""
-    add_cmd = [args.provider, "account", "add", args.name]
-    if args.label:
-        add_cmd += ["--label", args.label]
-    run_cli(add_cmd)  # tolerates "already exists"
-    values = json.loads(args.json) if args.json else {}
-    last = subprocess.CompletedProcess([], 0, "", "")
-    for key, value in values.items():
-        if value is None or str(value) == "":
-            continue
-        last = run_cli([args.provider, "account", "set", args.name, str(key), str(value)])
-        if last.returncode != 0:
-            print((last.stderr or last.stdout or "account set failed").strip(), file=sys.stderr)
-            return last.returncode or 1
-    _dump(command_result(last))
+def command_doctor(args: argparse.Namespace) -> int:
+    p = paths()
+    _dump({
+        "binary": usage_monitor_binary(),
+        "cliVersion": cli_version(),
+        "popupVersion": POPUP_VERSION,
+        "state": str(p.state),
+        "cache": str(p.last_good),
+        "desktop": desktop_environment(),
+        "sessionType": session_type(),
+        "prefersDark": prefers_dark(),
+        "theme": resolve_theme()["name"],
+        "minFetchIntervalSeconds": min_fetch_interval(),
+        "cacheAgeSeconds": cache_age_seconds(),
+    })
     return 0
-
-
-def command_account_remove(args: argparse.Namespace) -> int:
-    proc = run_cli([args.provider, "account", "remove", args.name])
-    if proc.returncode != 0:
-        print((proc.stderr or proc.stdout or "account remove failed").strip(), file=sys.stderr)
-        return proc.returncode or 1
-    _dump(command_result(proc))
-    return 0
-
-
-def command_workspace_add(args: argparse.Namespace) -> int:
-    cmd = ["opencode-go", "workspace", "add", args.workspace]
-    if args.name:
-        cmd.append(args.name)
-    if args.account:
-        cmd += ["--account", args.account]
-    proc = run_cli(cmd)
-    if proc.returncode != 0:
-        print((proc.stderr or proc.stdout or "workspace add failed").strip(), file=sys.stderr)
-        return proc.returncode or 1
-    _dump(command_result(proc))
-    return 0
-
-
-def command_workspace_remove(args: argparse.Namespace) -> int:
-    cmd = ["opencode-go", "workspace", "remove", args.workspace]
-    if args.account:
-        cmd += ["--account", args.account]
-    proc = run_cli(cmd)
-    if proc.returncode != 0:
-        print((proc.stderr or proc.stdout or "workspace remove failed").strip(), file=sys.stderr)
-        return proc.returncode or 1
-    _dump(command_result(proc))
-    return 0
-
-
-def command_result(proc: subprocess.CompletedProcess[str]) -> dict[str, Any]:
-    return {"status": "ok" if proc.returncode == 0 else "error", "stdout": proc.stdout, "stderr": proc.stderr}
 
 
 def _dump(payload: Any) -> None:
@@ -1403,15 +1645,18 @@ def _dump(payload: Any) -> None:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Usage Monitor KDE data helper")
+    parser = argparse.ArgumentParser(description="Usage Monitor Waybar data helper")
     sub = parser.add_subparsers(dest="command", required=True)
-    sub.add_parser("summary", help="Fetch providers and print the Plasma summary JSON").set_defaults(func=command_summary)
+    summary = sub.add_parser("summary", help="Print the usage summary JSON (fetching if the cache is old)")
+    summary.add_argument("--force", action="store_true", help="fetch even when the cached value is still fresh")
+    summary.set_defaults(func=command_summary)
     sub.add_parser("cache", help="Print a summary from the last-good cache only").set_defaults(func=command_cache)
-    sub.add_parser("settings", help="Print provider settings for the Plasma settings view").set_defaults(func=command_settings)
+    sub.add_parser("settings", help="Print provider settings for the settings window").set_defaults(func=command_settings)
     sub.add_parser("state", help="Print the current state.json contents").set_defaults(func=command_state)
     sub.add_parser("cost", help="Print per-provider cost data").set_defaults(func=command_cost)
     sub.add_parser("themes", help="Print the resolved theme and the theme catalog").set_defaults(func=command_themes)
-    sub.add_parser("cache-clear", help="Clear the widget last-good cache").set_defaults(func=command_cache_clear)
+    sub.add_parser("cache-clear", help="Clear the popup last-good cache").set_defaults(func=command_cache_clear)
+    sub.add_parser("doctor", help="Print resolved paths, session and theme").set_defaults(func=command_doctor)
     set_state = sub.add_parser("set-state", help="Update a key in the widget state file")
     set_state.add_argument("--key", required=True)
     set_state.add_argument("--value", required=True)
@@ -1419,29 +1664,6 @@ def build_parser() -> argparse.ArgumentParser:
     batch = sub.add_parser("batch-set-state", help="Apply multiple state changes at once")
     batch.add_argument("--json", required=True)
     batch.set_defaults(func=command_batch_set_state)
-    set_provider = sub.add_parser("set-provider", help="Enable or disable a provider")
-    set_provider.add_argument("--provider", required=True)
-    set_provider.add_argument("--enabled", choices=["true", "false"], required=True)
-    set_provider.set_defaults(func=command_set_provider)
-    account_save = sub.add_parser("account-save", help="Add a named account and set its config keys")
-    account_save.add_argument("--provider", required=True)
-    account_save.add_argument("--name", required=True)
-    account_save.add_argument("--label", default="")
-    account_save.add_argument("--json", default="{}", help="JSON object of config key/value pairs")
-    account_save.set_defaults(func=command_account_save)
-    account_remove = sub.add_parser("account-remove", help="Remove a named account")
-    account_remove.add_argument("--provider", required=True)
-    account_remove.add_argument("--name", required=True)
-    account_remove.set_defaults(func=command_account_remove)
-    workspace_add = sub.add_parser("workspace-add", help="Add an opencode-go workspace")
-    workspace_add.add_argument("--workspace", required=True)
-    workspace_add.add_argument("--name", default="")
-    workspace_add.add_argument("--account", default="")
-    workspace_add.set_defaults(func=command_workspace_add)
-    workspace_remove = sub.add_parser("workspace-remove", help="Remove an opencode-go workspace")
-    workspace_remove.add_argument("--workspace", required=True)
-    workspace_remove.add_argument("--account", default="")
-    workspace_remove.set_defaults(func=command_workspace_remove)
     return parser
 
 

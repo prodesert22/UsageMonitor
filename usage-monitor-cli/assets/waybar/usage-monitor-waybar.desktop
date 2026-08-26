@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Usage Monitor popup
+Comment=AI provider usage popup for the Waybar module
+Exec=usage-monitor-waybar-popup
+Icon=usage-monitor
+Terminal=false
+Categories=Utility;Monitor;
+StartupWMClass=usage-monitor-waybar
+NoDisplay=true

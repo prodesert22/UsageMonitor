@@ -28,7 +28,7 @@ else
   exit 1
 fi
 
-run "$RUFF" check widgets
+run "$RUFF" check widgets usage-monitor-cli/assets/waybar
 run "$PYTHON" -m unittest discover -s widgets -p 'test_*.py'
 
 if command -v qmllint >/dev/null 2>&1; then
@@ -40,7 +40,7 @@ else
 fi
 
 if [ -n "$QMLLINT" ]; then
-  for file in $(git ls-files 'widgets/kde/package/contents/**/*.qml'); do
+  for file in $(git ls-files 'usage-monitor-cli/assets/**/*.qml'); do
     run "$QMLLINT" "$file"
   done
 else

@@ -14,6 +14,7 @@ Item {
         "refreshIntervalSeconds": 30,
         "showBarText": true,
         "showAccountEmail": true,
+        "showDecimals": true,
         "providerOrder": "[]",
         "theme": ({ "mode": "plasma", "colors": ({}), "font": ({}), "metrics": ({}) }),
         "themeCatalog": ({ "builtin": [], "schemes": [] }),

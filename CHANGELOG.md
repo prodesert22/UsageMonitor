@@ -5,6 +5,75 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
+## [Unreleased]
+
+### Added
+- **Waybar popup**: the KDE Plasma widget's QML interface, ported to plain Qt
+  Quick and opened from the module's `on-click`
+  (`usage-monitor-waybar-popup`, installed alongside the bar wrapper by
+  `usage-monitor-cli widget install waybar`). Same popup layout as the plasmoid —
+  header with summary/busy indicator, Refresh, Cost, Keep open (pin) and
+  Settings, provider cards with Session/Weekly/Monthly bars, reset times, stale
+  markers, per-provider errors and 30-day cost — plus a settings window with the
+  General, Providers, Order and Theme pages.
+- Waybar popup theming: follow the desktop colors (KDE `kdeglobals`, else the
+  GTK/GNOME dark preference, overridable with `USAGE_MONITOR_DARK`), seven
+  bundled themes (macOS Dark/Light, Nord, Dracula, Tokyo Night, Gruvbox Dark,
+  Catppuccin Mocha), installed KDE color schemes, named custom palettes and the
+  transparency slider, with a live preview.
+- Waybar popup settings live in `~/.config/usage-monitor-waybar/state.json` and
+  the cache in `~/.cache/usage-monitor-waybar/last.json`, separate from the KDE
+  widget so both can run on the same machine.
+- New data helper `usage_monitor_waybar_data.py` with a shell CLI (`summary`,
+  `cache`, `settings`, `state`, `cost`, `themes`, `cache-clear`, `doctor`,
+  `set-state`, `batch-set-state`).
+- Popup launcher options: `--anchor`, `--width`, `--height`, `--margin`,
+  `--once`, `--no-single-instance`, `--settings`, `--quit`, `--doctor`.
+
+### Fixed
+- **Bar dropped to "⚠" on any failed fetch.** The module piped a single
+  `usage-monitor-cli widget waybar` call straight out, so one rate-limited or
+  expired-credential round replaced the percentage with the warning glyph. It
+  now goes through the shared helper: failing providers keep their last good
+  value, the module is marked `stale`, and "⚠" is left for "nothing answered and
+  there is no cache".
+- **Providers were polled twice and rate-limited themselves.** The bar and the
+  popup fetched independently on 30 s timers. They now share one fetched value
+  for `minFetchIntervalSeconds` (default 180 s, Settings → General), take an
+  inter-process lock around the fetch, and back off after failures too; the
+  Refresh button still forces a fetch. The installer's module snippet now
+  suggests `"interval": 300`.
+- **Popup opened in the middle of the screen on Wayland.** It is now a
+  wlr-layer-shell surface (via Qt's LayerShellQt integration) anchored to the
+  configured screen edge, so the compositor places it under the bar, outside
+  Waybar's exclusive zone. Falls back to the previous behaviour when the
+  integration is missing; `USAGE_MONITOR_LAYER_SHELL=0` disables it, and
+  `--doctor` reports `layerShell`.
+- Installed desktop entry (`usage-monitor-waybar.desktop`) so the popup keeps a
+  stable `app_id`/`WM_CLASS` for compositor rules and the XDG portal.
+- The stored "Keep open" pin was read once at startup, before the settings
+  payload arrived, and then written back — unpinning a pinned popup.
+- **OpenCode Go showed usage 100× too high.** The dashboard now reports
+  `usagePercent` as a percentage with decimal places (0.7 = 0.7 %), but the
+  provider still treated every value ≤ 1.0 as a ratio and multiplied it by
+  100 — so 0.7 % rendered as 70 % in the CLI and widgets. Values are now used
+  as reported and clamped to 0–100.
+
+### Notes for non-Plasma systems
+- The popup uses PySide6 (or PyQt6) and reports the matching install command for
+  the running distribution when neither is present; the Waybar module keeps
+  working without Qt.
+- Icons are drawn as vectors instead of freedesktop icon names, so no icon theme
+  is required, and Qt Quick Controls' Fusion style is used with a palette built
+  from the resolved theme.
+- The first click starts a resident process holding a socket under
+  `$XDG_RUNTIME_DIR` (per-uid `/tmp` fallback); later clicks toggle the existing
+  window.
+- Placement: on X11 the launcher positions the popup (pointer-following by
+  default); on Wayland the compositor decides, so the window sets
+  `app_id`/`WM_CLASS` `usage-monitor-waybar` and the docs give ready-made
+  Hyprland/Sway/river rules.
+
 ## [0.8.0]
 
 Adds theming to the KDE Plasma widget: bundled themes, installed KDE color

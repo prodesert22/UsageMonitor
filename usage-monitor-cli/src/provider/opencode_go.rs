@@ -502,12 +502,9 @@ fn parse_window(text: &str, window_key: &str) -> Option<ParsedWindow> {
         };
         let reset_in_sec = extract_number(segment, "resetInSec").unwrap_or(0.0) as i64;
 
-        // Some payload variants emit ratios instead of percentages.
-        let percent = if (0.0..=1.0).contains(&percent) {
-            percent * 100.0
-        } else {
-            percent
-        };
+        // `usagePercent` is already a percentage (0–100) and may carry decimal
+        // places (e.g. 0.7 means 0.7%). Older payload variants emitted ratios,
+        // but values ≤ 1.0 must not be scaled: that would turn 0.7% into 70%.
         return Some(ParsedWindow {
             percent: percent.clamp(0.0, 100.0),
             reset_in_sec,
@@ -805,11 +802,16 @@ mod tests {
     }
 
     #[test]
-    fn test_parse_window_ratio_heuristic() {
-        // Values <= 1.0 are ratios and get scaled to percent.
+    fn test_parse_window_fractional_percent_not_scaled() {
+        // The dashboard reports percentages directly, with decimal places:
+        // 0.7 means 0.7%, not 70% — it must not be scaled by 100.
+        let page = "rollingUsage:{usagePercent:0.7,resetInSec:60}";
+        let w = parse_window(page, "rollingUsage").unwrap();
+        assert!((w.percent - 0.7).abs() < 1e-9);
+
         let page = "rollingUsage:{usagePercent:0.42,resetInSec:60}";
         let w = parse_window(page, "rollingUsage").unwrap();
-        assert!((w.percent - 42.0).abs() < 1e-9);
+        assert!((w.percent - 0.42).abs() < 1e-9);
     }
 
     #[test]
@@ -1016,6 +1018,35 @@ mod tests {
             "Production Rolling (5h)"
         );
         assert_eq!(snap.extra_rate_windows[0].label, "Staging Rolling (5h)");
+    }
+
+    #[tokio::test]
+    async fn test_fetch_fractional_percent_not_scaled() {
+        let server = MockServer::start().await;
+
+        Mock::given(method("GET"))
+            .and(path("/workspace/wrk_x/go"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(dashboard_page(
+                0.7,
+                12.3,
+                Some(0.5),
+            )))
+            .mount(&server)
+            .await;
+
+        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("cookie".into(), "session=abc".into());
+        ctx.config.insert("workspaces".into(), "wrk_x".into());
+
+        let snap = provider.fetch_usage(&ctx).await.unwrap();
+        let primary = snap.primary_rate_window.unwrap();
+        // 0.7% must map to 0.007, not 0.7 (70%).
+        assert!((primary.usage_ratio - 0.007).abs() < 1e-9);
+        let secondary = snap.secondary_rate_window.unwrap();
+        assert!((secondary.usage_ratio - 0.123).abs() < 1e-9);
+        let tertiary = snap.tertiary_rate_window.unwrap();
+        assert!((tertiary.usage_ratio - 0.005).abs() < 1e-9);
     }
 
     #[tokio::test]

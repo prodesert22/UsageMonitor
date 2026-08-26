@@ -44,6 +44,8 @@ KCM.SimpleKCM {
             var v = page.pending[k]
             if (k === "showBarText" || k === "showAccountEmail")
                 s[k] = (v === true || v === "true")
+            else if (k === "showDecimals")
+                s[k] = (v === true || v === "true")
             else if (k === "refreshIntervalSeconds")
                 s[k] = parseInt(v)
             else if (k === "barProvider")
@@ -134,6 +136,26 @@ KCM.SimpleKCM {
 
                     QQC2.ToolTip.visible: showAccountEmailSwitch.hovered
                     QQC2.ToolTip.text: "Show the account label below each provider in the usage view."
+                    QQC2.ToolTip.delay: 500
+                }
+            }
+
+            ColumnLayout {
+                spacing: 0
+
+                PlasmaComponents3.Label {
+                    text: "Show decimal places"
+                    opacity: 0.8
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+
+                QQC2.Switch {
+                    id: showDecimalsSwitch
+                    checked: page.curr("showDecimals", backend.settings.showDecimals !== false)
+                    onToggled: page.setPending("showDecimals", checked)
+
+                    QQC2.ToolTip.visible: showDecimalsSwitch.hovered
+                    QQC2.ToolTip.text: "Show usage percentages with one decimal place (e.g. 45.5%) instead of rounding to whole numbers."
                     QQC2.ToolTip.delay: 500
                 }
             }

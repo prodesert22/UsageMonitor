@@ -7,7 +7,7 @@ pub(crate) struct WidgetSummary {
     pub(crate) tooltip: String,
     #[serde(rename = "class")]
     pub(crate) class_name: String,
-    pub(crate) percentage: u8,
+    pub(crate) percentage: f64,
     pub(crate) has_errors: bool,
     pub(crate) providers: Vec<WidgetProvider>,
     pub(crate) updated_at: String,
@@ -20,7 +20,7 @@ impl WidgetSummary {
             text: "—".into(),
             tooltip: message,
             class_name: "stale".into(),
-            percentage: 0,
+            percentage: 0.0,
             has_errors: false,
             providers: Vec::new(),
             updated_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
@@ -47,7 +47,7 @@ impl WidgetSummary {
                     tooltip
                 },
                 class_name: "stale".into(),
-                percentage: 0,
+                percentage: 0.0,
                 has_errors,
                 providers,
                 updated_at: chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Secs, true),
@@ -56,8 +56,7 @@ impl WidgetSummary {
         let percentage = ok_providers
             .iter()
             .map(|provider| provider.max_percentage)
-            .max()
-            .unwrap_or(0);
+            .fold(0.0, f64::max);
         let class_name = match (super::payload::widget_class(percentage), has_errors) {
             ("ok", true) => "stale".to_string(),
             (class_name, _) => class_name.to_string(),
@@ -68,7 +67,7 @@ impl WidgetSummary {
             .collect::<Vec<_>>()
             .join("\n");
         Self {
-            text: format!("{}%", percentage),
+            text: super::payload::format_percent(percentage),
             tooltip,
             class_name,
             percentage,
@@ -92,7 +91,7 @@ pub(crate) struct WidgetProvider {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) plan: Option<String>,
     pub(crate) windows: Vec<WidgetWindow>,
-    pub(crate) max_percentage: u8,
+    pub(crate) max_percentage: f64,
     pub(crate) status: String,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) error: Option<String>,
@@ -124,7 +123,7 @@ impl WidgetProvider {
 pub(crate) struct WidgetWindow {
     pub(crate) id: String,
     pub(crate) label: String,
-    pub(crate) percentage: u8,
+    pub(crate) percentage: f64,
     pub(crate) status: RateWindowStatus,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) used: Option<u64>,

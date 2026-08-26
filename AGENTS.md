@@ -23,7 +23,8 @@ terminal and Linux desktop widgets.
 - **Async/HTTP:** `tokio`, `reqwest`.
 - **CLI:** `clap`.
 - **Serialization/config:** `serde`, `serde_json`, `toml`.
-- **Desktop widgets:** KDE Plasma 6 QML + Python helper; Waybar JSON wrapper.
+- **Desktop widgets:** KDE Plasma 6 QML + Python helper; Waybar JSON wrapper plus
+  a Qt Quick popup (PySide6/PyQt6) sharing the same UI.
 - **Quality:** rustfmt, Clippy, Rust tests, Ruff, Python widget tests, optional
   `qmllint` when installed.
 
@@ -51,7 +52,7 @@ assets/                 Project artwork used by documentation/README
    cargo fmt -p usage-monitor-cli --check
    cargo clippy --workspace --all-targets -- -D warnings
    cargo test --workspace
-   ruff check widgets
+   ruff check widgets usage-monitor-cli/assets/waybar
    python -m unittest discover -s widgets -p 'test_*.py'
    ```
 
@@ -61,7 +62,8 @@ assets/                 Project artwork used by documentation/README
    `Cargo.toml`, `Cargo.lock`,
    `usage-monitor-cli/assets/kde/package/metadata.json`,
    `usage-monitor-cli/assets/kde/package/contents/code/usage_monitor_kde.py`,
-   `CHANGELOG.md`, and `releases/vX.Y.Z.md`.
+   `usage-monitor-cli/assets/waybar/usage_monitor_waybar_data.py`
+   (`POPUP_VERSION`), `CHANGELOG.md`, and `releases/vX.Y.Z.md`.
 5. **Provider auth stays explicit and safe.** Never log secrets, tokens, cookies,
    API keys, OAuth credentials, or raw auth files. Tests must use mock data.
 6. **KDE icon rule.** The panel bar and popup header render the bundled project
@@ -117,6 +119,13 @@ kpackagetool6 --type Plasma/Applet --upgrade usage-monitor-cli/assets/kde/packag
   browser auto-import without documenting and testing the security model.
 - KDE helper code is intentionally testable without a running Plasma session;
   keep logic in Python helpers where it can be unit-tested.
+- The Waybar popup is a port of the KDE widget (`assets/waybar/ui/*.qml`,
+  `usage_monitor_waybar_data.py`). Each asset tree is installed on its own, so
+  the duplication is deliberate: a behaviour change that applies to both widgets
+  must be made in both trees. The popup must keep working with no icon theme, no
+  Kirigami, and on Wayland compositors where a client cannot place its own
+  window; Qt (PySide6/PyQt6) is required only for the popup, never for the bar
+  module.
 - CI currently mirrors the commands in `.github/workflows/ci.yml`; if changing
   the workflow, update this file and `docs/quality.md` when needed.
 

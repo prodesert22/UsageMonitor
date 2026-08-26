@@ -91,9 +91,14 @@ The full table with each provider's auth and auto-enable rule lives in
 
 Usage Monitor ships KDE Plasma 6 and Waybar widgets, embedded in the binary and
 installed with `usage-monitor-cli widget install <kde|waybar|all>`. The KDE
-plasmoid can follow the current desktop theme, use one of five bundled themes
+plasmoid can follow the current desktop theme, use one of the bundled themes
 (macOS Dark/Light, Nord, Dracula, Tokyo Night), reuse an installed KDE color
-scheme, or run a custom palette configured in its **Theme** settings page. See
+scheme, or run a custom palette configured in its **Theme** settings page.
+
+Waybar gets the same interface: the module's `on-click` opens a Qt Quick popup
+with the provider cards, cost and the full settings window (General, Providers,
+Order, Theme), themed from the desktop colors or any of the palettes above. It
+needs PySide6 or PyQt6; the bar module itself has no extra dependency. See
 [docs/widgets/](docs/widgets/README.md).
 
 ## Structure

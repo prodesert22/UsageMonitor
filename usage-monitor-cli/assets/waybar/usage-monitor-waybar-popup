@@ -1,0 +1,30 @@
+#!/usr/bin/env python3
+"""Launcher for the Usage Monitor Waybar popup (wired to Waybar's `on-click`).
+
+Loaded by path, not by import name: the installer symlinks this file into
+~/.local/bin, so the module next to the *resolved* script is what must be run.
+"""
+from __future__ import annotations
+
+import importlib.util
+import sys
+from pathlib import Path
+
+
+def _load_main():
+    module_path = Path(__file__).resolve().with_name("usage_monitor_waybar_popup.py")
+    spec = importlib.util.spec_from_file_location("usage_monitor_waybar_popup", module_path)
+    if spec is None or spec.loader is None:
+        return None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    spec.loader.exec_module(module)
+    return getattr(module, "main", None)
+
+
+if __name__ == "__main__":
+    entry = _load_main()
+    if entry is None:
+        print("Usage Monitor popup helper not found next to this script.", file=sys.stderr)
+        raise SystemExit(1)
+    raise SystemExit(entry(sys.argv[1:]))

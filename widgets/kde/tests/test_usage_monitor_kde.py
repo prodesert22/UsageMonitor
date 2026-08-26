@@ -1,4 +1,6 @@
+import contextlib
 import importlib.util
+import io
 import json
 import os
 import subprocess
@@ -179,6 +181,72 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(payload["providers"][0]["provider"], "claude")
 
 
+class DecimalsTests(unittest.TestCase):
+    DECIMAL_PAYLOAD: ClassVar[dict] = {"providers": [
+        {"provider_id": "kimi", "display_name": "Kimi",
+         "windows": [
+             {"id": "primary", "percentage": 45.5},
+             {"id": "secondary", "percentage": 28.25},
+         ]},
+    ]}
+
+    def entries(self):
+        return um.fetch_entries(runner=lambda args: proc(json.dumps(self.DECIMAL_PAYLOAD)))
+
+    def test_pct_label_keeps_one_decimal_by_default(self):
+        self.assertEqual(um.pct_label(45.5), "45.5%")
+        self.assertEqual(um.pct_label(46.0), "46%")
+
+    def test_pct_label_rounds_when_decimals_off(self):
+        self.assertEqual(um.pct_label(45.4, decimals=False), "45%")
+        self.assertEqual(um.pct_label(45.5, decimals=False), "46%")
+        self.assertEqual(um.pct_label(45.6, decimals=False), "46%")
+        self.assertEqual(um.pct_label(46.0, decimals=False), "46%")
+
+    def test_bar_text_rounds_when_decimals_off(self):
+        entries = self.entries()
+        self.assertEqual(um.bar_text(entries, pinned_provider="kimi", decimals=False), "46% • 28%")
+        # Default behavior (decimals on) is unchanged.
+        self.assertEqual(um.bar_text(entries, pinned_provider="kimi"), "45.5% • 28.2%")
+
+    def test_tooltip_lines_round_when_decimals_off(self):
+        entries = self.entries()
+        self.assertEqual(um.tooltip_lines(entries, decimals=False), ["Kimi session: 46%", "Kimi weekly: 28%"])
+        self.assertEqual(um.tooltip_lines(entries), ["Kimi session: 45.5%", "Kimi weekly: 28.2%"])
+
+    def test_summarize_rounds_text_and_tooltip_when_decimals_off(self):
+        entries = self.entries()
+        payload = um.summarize(entries, decimals=False)
+        self.assertEqual(payload["text"], "46%")
+        self.assertIn("Kimi session: 46%", payload["tooltip"])
+        # The raw percentage stays untouched: rounding is display-only.
+        self.assertEqual(payload["percentage"], 45.5)
+
+    def test_command_cache_rounds_percentages_when_decimals_off(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CACHE_HOME": td, "XDG_CONFIG_HOME": td}, clear=True):
+            um.write_json(um.paths().last_good, [
+                {"provider": "kimi", "displayName": "Kimi", "usage": {"primary": {"usedPercent": 45.5}}}
+            ])
+            um._write_state({"showDecimals": "false"})
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                um.command_cache(SimpleNamespace())
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["text"], "46%")
+            self.assertIn("Kimi session: 46%", payload["tooltip"])
+
+    def test_command_cache_keeps_decimals_by_default(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CACHE_HOME": td, "XDG_CONFIG_HOME": td}, clear=True):
+            um.write_json(um.paths().last_good, [
+                {"provider": "kimi", "displayName": "Kimi", "usage": {"primary": {"usedPercent": 45.5}}}
+            ])
+            out = io.StringIO()
+            with contextlib.redirect_stdout(out):
+                um.command_cache(SimpleNamespace())
+            payload = json.loads(out.getvalue())
+            self.assertEqual(payload["text"], "45.5%")
+
+
 class SettingsTests(unittest.TestCase):
     LIST_OUT = (
         "codex        enabled          Codex — ChatGPT plan\n"
@@ -217,6 +285,17 @@ class SettingsTests(unittest.TestCase):
                 self.assertEqual(work["active"], "false")
                 self.assertEqual([p["id"] for p in payload["pinnableProviders"]], ["codex"])
                 self.assertIn("connectHint", codex)
+
+    def test_settings_payload_includes_show_decimals(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True), \
+             mock.patch.object(um, "cli_output", side_effect=self.fake_output), \
+             mock.patch.object(um, "cli_version", return_value="0.6.0"), \
+             mock.patch.object(um, "installed_schemes", return_value=[]):
+            # On by default, matching the widget's current rendering.
+            self.assertTrue(um.settings_payload()["showDecimals"])
+            um._write_state({"showDecimals": "false"})
+            self.assertFalse(um.settings_payload()["showDecimals"])
 
     def test_settings_payload_carries_the_theme(self):
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):

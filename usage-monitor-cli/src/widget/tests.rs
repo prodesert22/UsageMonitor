@@ -4,10 +4,10 @@ use usage_monitor_cli::{RateWindow, UsageSnapshot};
 
 #[test]
 fn test_ratio_percentage_clamps_and_rounds() {
-    assert_eq!(ratio_percentage(-0.1), 0);
-    assert_eq!(ratio_percentage(0.424), 42);
-    assert_eq!(ratio_percentage(0.995), 100);
-    assert_eq!(ratio_percentage(2.0), 100);
+    assert_eq!(ratio_percentage(-0.1), 0.0);
+    assert_eq!(ratio_percentage(0.424), 42.4);
+    assert_eq!(ratio_percentage(0.995), 99.5);
+    assert_eq!(ratio_percentage(2.0), 100.0);
 }
 
 #[test]
@@ -19,7 +19,7 @@ fn test_widget_summary_uses_max_percentage_and_warning_class() {
     snap.secondary_rate_window = Some(RateWindow::new(84, 100, "Weekly", 10_080));
     let payload = WidgetSummary::from_providers(vec![WidgetProvider::from_snapshot(&snap)]);
     assert_eq!(payload.text, "84%");
-    assert_eq!(payload.percentage, 84);
+    assert_eq!(payload.percentage, 84.0);
     assert_eq!(payload.class_name, "warning");
     assert!(
         payload.tooltip.contains("Claude — Work Claude"),

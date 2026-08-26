@@ -15,6 +15,16 @@ QQC2.ScrollView {
     // both the themed palette and anything the transparency slider let through.
     background: null
 
+    // Mirrors the Python `pct_label` helper: whole numbers render without
+    // decimals, everything else keeps 1 decimal place. The "Show decimal
+    // places" setting rounds everything to whole numbers instead.
+    function pctLabel(v) {
+        v = Number(v) || 0
+        if (root.settings.showDecimals === false)
+            return Math.round(v) + "%"
+        return Number.isInteger(v) ? v + "%" : v.toFixed(1) + "%"
+    }
+
     ColumnLayout {
         width: usageScroll.availableWidth
         spacing: Kirigami.Units.largeSpacing
@@ -51,7 +61,7 @@ QQC2.ScrollView {
                     }
 
                     PlasmaComponents3.Label {
-                        text: Math.round(providerCard.modelData.maxPercent || 0) + "%"
+                        text: usageScroll.pctLabel(providerCard.modelData.maxPercent || 0)
                         color: root.ui.levelColor(Number(providerCard.modelData.maxPercent || 0))
                         font.family: root.ui.fontFamily
                         font.pointSize: root.ui.fontSize
@@ -132,7 +142,7 @@ QQC2.ScrollView {
                             }
 
                             PlasmaComponents3.Label {
-                                text: Math.round(modelData.percent) + "%"
+                                text: usageScroll.pctLabel(modelData.percent)
                                 color: root.ui.levelColor(Number(modelData.percent))
                                 font.family: root.ui.fontFamily
                                 font.pointSize: root.ui.fontSize

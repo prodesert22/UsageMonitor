@@ -197,9 +197,8 @@ extracted by locating each key and reading its `usagePercent` and
 
 Semantics:
 
-- `usagePercent` is 0–100. Values ≤ 1.0 are treated as a ratio and scaled
-  by 100 (some payload variants emit ratios); the result is clamped to
-  0–100.
+- `usagePercent` is a percentage between 0 and 100 and may carry decimal
+  places (e.g. `0.7` means 0.7 %); the result is clamped to 0–100.
 - `resetInSec` is seconds from now until the window resets
   (`resets_at = now + resetInSec`).
 - `monthlyUsage` only appears on plans that expose a monthly quota.

@@ -17,7 +17,7 @@ PlasmoidItem {
     property string errorText: ""
     property string errorDetails: ""
     property bool busy: false
-    property var settings: ({"providers": [], "pinnableProviders": [], "pinnedProvider": "", "refreshIntervalSeconds": 30, "showBarText": true, "showAccountEmail": true, "providerOrder": "[]", "theme": ({"mode": "plasma", "colors": ({}), "font": ({}), "metrics": ({})}), "plasmoidVersion": "", "cliVersion": ""})
+    property var settings: ({"providers": [], "pinnableProviders": [], "pinnedProvider": "", "refreshIntervalSeconds": 30, "showBarText": true, "showAccountEmail": true, "showDecimals": true, "providerOrder": "[]", "theme": ({"mode": "plasma", "colors": ({}), "font": ({}), "metrics": ({})}), "plasmoidVersion": "", "cliVersion": ""})
     property string helperPath: localFilePath(Qt.resolvedUrl("../code/usage_monitor_kde.py"))
     property string monitorIcon: Qt.resolvedUrl("../images/usage-monitor.png")
 
