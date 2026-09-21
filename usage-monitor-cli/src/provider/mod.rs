@@ -65,6 +65,36 @@ impl ProviderContext {
     }
 }
 
+/// Expands a user-configured credentials path: trims surrounding whitespace
+/// and expands a leading `~` (or `~/`) to `$HOME`. Falls back to the raw
+/// (trimmed) value when `HOME` is unavailable.
+pub fn expand_credentials_path(raw: &str) -> std::path::PathBuf {
+    let trimmed = raw.trim();
+    if let Some(rest) = trimmed.strip_prefix('~') {
+        if let Some(home) = std::env::var_os("HOME") {
+            let mut path = std::path::PathBuf::from(home);
+            let rest = rest.strip_prefix('/').unwrap_or(rest);
+            if !rest.is_empty() {
+                path.push(rest);
+            }
+            return path;
+        }
+    }
+    std::path::PathBuf::from(trimmed)
+}
+
+/// Resolves a configured credentials path to a file: expands `~`/whitespace
+/// and, when the result is an existing directory, joins `file_name`
+/// (e.g. `~/.codex-work` → `~/.codex-work/auth.json`).
+pub fn resolve_credentials_file(raw: &str, file_name: &str) -> std::path::PathBuf {
+    let path = expand_credentials_path(raw);
+    if path.is_dir() {
+        path.join(file_name)
+    } else {
+        path
+    }
+}
+
 /// Provider metadata.
 #[derive(Debug, Clone)]
 pub struct ProviderMetadata {
@@ -106,5 +136,28 @@ mod tests {
     fn test_provider_context_with_api_key() {
         let ctx = ProviderContext::with_api_key("sk-test");
         assert_eq!(ctx.config.get("api_key").unwrap(), "sk-test");
+    }
+
+    #[test]
+    fn test_expand_credentials_path_trims_and_expands_tilde() {
+        let home = std::env::var_os("HOME").expect("HOME set for test");
+        let expanded = expand_credentials_path("  ~/.codex-plus2/auth.json  ");
+        assert_eq!(
+            expanded,
+            std::path::PathBuf::from(home).join(".codex-plus2/auth.json")
+        );
+        assert_eq!(
+            expand_credentials_path("/tmp/auth.json "),
+            std::path::PathBuf::from("/tmp/auth.json")
+        );
+    }
+
+    #[test]
+    fn test_resolve_credentials_file_accepts_directory() {
+        let dir = std::env::temp_dir().join(format!("usage-monitor-creds-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let resolved = resolve_credentials_file(dir.to_str().unwrap(), "auth.json");
+        assert_eq!(resolved, dir.join("auth.json"));
+        std::fs::remove_dir_all(&dir).ok();
     }
 }

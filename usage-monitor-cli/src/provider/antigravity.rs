@@ -130,8 +130,13 @@ impl AntigravityProvider {
     }
 
     fn creds_path(ctx: &ProviderContext) -> std::path::PathBuf {
-        if let Some(p) = ctx.config.get("credentials_path").filter(|v| !v.is_empty()) {
-            return std::path::PathBuf::from(p);
+        if let Some(p) = ctx
+            .config
+            .get("credentials_path")
+            .map(|s| s.trim())
+            .filter(|v| !v.is_empty())
+        {
+            return crate::provider::expand_credentials_path(p);
         }
         let home = std::env::var("HOME").unwrap_or_default();
         std::path::Path::new(&home).join(".codexbar/antigravity/oauth_creds.json")

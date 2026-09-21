@@ -238,7 +238,7 @@ impl CodexProvider {
 
     fn credentials_path(ctx: &ProviderContext) -> Result<PathBuf, SpendPanelError> {
         if let Some(p) = ctx.config.get("credentials_path") {
-            return Ok(PathBuf::from(p));
+            return Ok(crate::provider::resolve_credentials_file(p, "auth.json"));
         }
         CodexOAuthCredentials::default_path().ok_or_else(|| {
             SpendPanelError::ConfigError("cannot resolve HOME for codex credentials".into())
@@ -889,5 +889,107 @@ mod tests {
 
         let result = provider.fetch_usage(&ctx).await;
         assert!(matches!(result, Err(SpendPanelError::AuthFailed(_, _))));
+    }
+
+    /// Regression: `credentials_path` pointing at a `CODEX_HOME` directory
+    /// (with surrounding whitespace, as saved by
+    /// `codex account set <name> credentials_path "~/.codex-plus2 "`)
+    /// must resolve to `<dir>/auth.json` instead of failing with
+    /// "cannot read credentials".
+    #[test]
+    fn test_credentials_path_accepts_directory_with_whitespace() {
+        let dir = std::env::temp_dir().join(format!(
+            "usage-monitor-codex-regress-dir-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let auth_file = dir.join("auth.json");
+        std::fs::write(&auth_file, auth_json("at-dir")).unwrap();
+
+        // Trailing space mirrors the real-world config that triggered the bug.
+        let mut ctx = ProviderContext::new();
+        ctx.config
+            .insert("credentials_path".into(), format!("{} ", dir.display()));
+
+        let resolved = CodexProvider::credentials_path(&ctx).unwrap();
+        assert_eq!(resolved, auth_file);
+        // And the resolved file must actually load.
+        let creds = CodexOAuthCredentials::load_from_path(&resolved).unwrap();
+        assert_eq!(creds.access_token, "at-dir");
+
+        std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// Regression: two Codex accounts backed by different `auth.json` files
+    /// must each fetch with their own token. Before the path-resolution fix,
+    /// the second account failed to load its file and the UI ended up showing
+    /// the default account's values for both.
+    #[tokio::test]
+    async fn test_two_accounts_fetch_with_their_own_credentials() {
+        fn wham_with_primary(used_percent: f64) -> serde_json::Value {
+            serde_json::json!({
+                "plan_type": "plus",
+                "rate_limit": {
+                    "primary_window": {
+                        "used_percent": used_percent,
+                        "limit_window_seconds": 18000,
+                        "reset_at": 1781326965
+                    },
+                    "secondary_window": {
+                        "used_percent": 10,
+                        "limit_window_seconds": 604800,
+                        "reset_at": 1781358459
+                    }
+                }
+            })
+        }
+
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/backend-api/wham/usage"))
+            .and(header("authorization", "Bearer at-default"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(wham_with_primary(1.0)))
+            .mount(&server)
+            .await;
+        Mock::given(method("GET"))
+            .and(path("/backend-api/wham/usage"))
+            .and(header("authorization", "Bearer at-plus2"))
+            .respond_with(ResponseTemplate::new(200).set_body_json(wham_with_primary(77.0)))
+            .mount(&server)
+            .await;
+
+        let default_path = write_temp_auth("regress-default", &auth_json("at-default"));
+        // Second account stored as `<CODEX_HOME>/auth.json`, referenced by
+        // directory (with trailing whitespace, as in the reported config).
+        let dir = std::env::temp_dir().join(format!(
+            "usage-monitor-codex-regress-plus2-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("auth.json"), auth_json("at-plus2")).unwrap();
+
+        let provider = CodexProvider::with_base_urls(&server.uri(), &server.uri());
+
+        let mut ctx_default = ProviderContext::new();
+        ctx_default.config.insert(
+            "credentials_path".into(),
+            default_path.display().to_string(),
+        );
+        let snap_default = provider.fetch_usage(&ctx_default).await.unwrap();
+
+        let mut ctx_plus2 = ProviderContext::new();
+        ctx_plus2
+            .config
+            .insert("credentials_path".into(), format!("{} ", dir.display()));
+        let snap_plus2 = provider.fetch_usage(&ctx_plus2).await.unwrap();
+
+        std::fs::remove_file(&default_path).ok();
+        std::fs::remove_dir_all(&dir).ok();
+
+        let ratio_default = snap_default.primary_rate_window.unwrap().usage_ratio;
+        let ratio_plus2 = snap_plus2.primary_rate_window.unwrap().usage_ratio;
+        assert!((ratio_default - 0.01).abs() < 1e-9);
+        assert!((ratio_plus2 - 0.77).abs() < 1e-9);
+        assert_ne!(ratio_default, ratio_plus2);
     }
 }

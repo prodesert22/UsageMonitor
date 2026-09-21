@@ -205,7 +205,10 @@ impl ClaudeProvider {
 
     fn credentials_path(ctx: &ProviderContext) -> Result<PathBuf, SpendPanelError> {
         if let Some(p) = ctx.config.get("credentials_path") {
-            return Ok(PathBuf::from(p));
+            return Ok(crate::provider::resolve_credentials_file(
+                p,
+                ".credentials.json",
+            ));
         }
         ClaudeOAuthCredentials::default_path().ok_or_else(|| {
             SpendPanelError::ConfigError("cannot resolve HOME for claude credentials".into())
