@@ -1359,6 +1359,7 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
         "themeState": {key: str(value) for key, value in sf.items() if str(key).startswith("theme")},
         "plasmoidVersion": PLASMOID_VERSION,
         "cliVersion": cli_ver,
+        "update": update_info(PLASMOID_VERSION, cli_ver, sf),
         "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
 
@@ -1372,6 +1373,139 @@ def cli_version() -> str:
                 return version[len(prefix):]
         return version
     return "unknown"
+
+
+# --------------------------------------------------------------------------
+# Self-update: the widget compares its baked-in version with `cli --version`
+# (local, no network). Changelogs come from `widget changelog`: the per-version
+# release file in the repo first, GitHub Releases API next, embedded
+# CHANGELOG.md fallback offline. Cached a day.
+# --------------------------------------------------------------------------
+
+UPDATE_DISMISS_KEY = "dismissedUpdateVersion"
+RELEASE_CACHE_TTL_SECONDS = 24 * 3600
+RELEASES_REPO = "prodesert22/UsageMonitor"
+
+
+def _version_tuple(raw: Any) -> list[int]:
+    parts = str(raw or "").strip().lstrip("vV= ").split(".")
+    numbers: list[int] = []
+    for part in parts:
+        digits = ""
+        for ch in part:
+            if ch.isdigit():
+                digits += ch
+            else:
+                break
+        numbers.append(int(digits) if digits else 0)
+    return numbers
+
+
+def compare_versions(left: Any, right: Any) -> int:
+    """Numeric version comparison: -1 when left < right, 0 when equal, 1 above."""
+    a, b = _version_tuple(left), _version_tuple(right)
+    width = max(len(a), len(b), 1)
+    a += [0] * (width - len(a))
+    b += [0] * (width - len(b))
+    return (a > b) - (a < b)
+
+
+def is_outdated(installed: Any, current: Any) -> bool:
+    """True when an installed widget version is older than the CLI binary."""
+    if not installed or not current or current == "unknown":
+        return False
+    return compare_versions(installed, current) < 0
+
+
+def release_url(version: Any) -> str:
+    return f"https://github.com/{RELEASES_REPO}/releases/tag/v{version}"
+
+
+def update_info(widget_version: str, cli_ver: str, state: Mapping[str, Any] | None = None) -> dict[str, Any]:
+    """The `update` object carried by the settings payload."""
+    sf = state if isinstance(state, Mapping) else {}
+    dismissed = str(sf.get(UPDATE_DISMISS_KEY, "") or "")
+    outdated = is_outdated(widget_version, cli_ver)
+    return {
+        "installed": widget_version,
+        "available": cli_ver,
+        "outdated": outdated,
+        "dismissed": bool(dismissed) and dismissed == cli_ver,
+        "url": release_url(cli_ver) if outdated else "",
+    }
+
+
+def _release_cache_path(version: str) -> Path:
+    # `version` reaches the filesystem: slug it so `../../` (from --version or
+    # a crafted CLI reply) cannot escape the cache dir.
+    slug = re.sub(r"[^A-Za-z0-9._-]", "_", version) or "unknown"
+    return paths().cache_dir / f"release-{slug}.json"
+
+
+def _cached_release(version: str, max_age: float = RELEASE_CACHE_TTL_SECONDS) -> dict[str, Any] | None:
+    raw = load_json(_release_cache_path(version), None)
+    if not isinstance(raw, dict) or not isinstance(raw.get("payload"), dict):
+        return None
+    try:
+        stamp = datetime.fromisoformat(str(raw.get("fetchedAt", "")).replace("Z", "+00:00"))
+    except ValueError:
+        return None
+    age = (datetime.now(timezone.utc) - stamp).total_seconds()
+    if age < 0 or age > max_age:
+        return None
+    return raw["payload"]
+
+
+def fetch_changelog(version: str, runner: Runner = run_cli) -> dict[str, Any]:
+    """Release notes for `version`, cached for a day.
+
+    Served from cache when fresh; a failed fetch falls back to a stale cache,
+    and only with neither does it report `unavailable` (the UI then links to
+    the release page instead).
+    """
+    version = str(version or "").strip().lstrip("vV")
+    if not version:
+        return {"version": "", "url": "", "body": "", "source": "unavailable"}
+    cached = _cached_release(version)
+    if cached is not None:
+        return cached
+    payload: dict[str, Any] | None = None
+    try:
+        proc = runner(["widget", "changelog", version])
+    except (OSError, subprocess.SubprocessError):
+        # Missing binary, timeout, denied exec: fall through to stale/unavailable.
+        proc = None
+    if proc is not None and proc.returncode == 0:
+        try:
+            parsed = json.loads(proc.stdout or "{}")
+            if isinstance(parsed, dict) and parsed.get("version"):
+                payload = {
+                    "version": str(parsed.get("version") or version),
+                    "url": str(parsed.get("url") or release_url(version)),
+                    "body": str(parsed.get("body") or ""),
+                    "source": str(parsed.get("source") or "unknown"),
+                }
+        except json.JSONDecodeError:
+            payload = None
+    if payload is None:
+        stale = _cached_release(version, max_age=float("inf"))
+        if stale is not None:
+            return stale
+        return {"version": version, "url": release_url(version), "body": "", "source": "unavailable"}
+    write_json(_release_cache_path(version), {
+        "fetchedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        "payload": payload,
+    })
+    return payload
+
+
+def apply_update(target: str = "kde", runner: Runner = run_cli) -> subprocess.CompletedProcess[str]:
+    """Reinstall one widget from the current binary.
+
+    Uses `install`, not `sync`: the banner reads the baked-in helper version
+    while `sync` trusts the stamp file, so `sync` could no-op on divergence.
+    """
+    return runner(["widget", "install", target])
 
 
 # --------------------------------------------------------------------------
@@ -1495,6 +1629,29 @@ def command_cache_clear(args: argparse.Namespace) -> int:
     return 0
 
 
+def command_update_check(args: argparse.Namespace) -> int:
+    _dump(update_info(PLASMOID_VERSION, cli_version(), state_full()))
+    return 0
+
+
+def command_update_changelog(args: argparse.Namespace) -> int:
+    _dump(fetch_changelog(args.version))
+    return 0
+
+
+def command_update_apply(args: argparse.Namespace) -> int:
+    _dump(command_result(apply_update(args.target or "kde")))
+    return 0
+
+
+def command_update_dismiss(args: argparse.Namespace) -> int:
+    sf = state_full()
+    sf[UPDATE_DISMISS_KEY] = args.version
+    _write_state(sf)
+    _dump({"status": "ok", "dismissed": args.version})
+    return 0
+
+
 def command_account_save(args: argparse.Namespace) -> int:
     """Add a named account (idempotent) and set its config keys in one call."""
     add_cmd = [args.provider, "account", "add", args.name]
@@ -1568,6 +1725,16 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("cost", help="Print per-provider cost data").set_defaults(func=command_cost)
     sub.add_parser("themes", help="Print the resolved theme and the theme catalog").set_defaults(func=command_themes)
     sub.add_parser("cache-clear", help="Clear the widget last-good cache").set_defaults(func=command_cache_clear)
+    sub.add_parser("update-check", help="Compare the installed widget version with the CLI version").set_defaults(func=command_update_check)
+    changelog = sub.add_parser("update-changelog", help="Print the release notes for a version")
+    changelog.add_argument("--version", required=True)
+    changelog.set_defaults(func=command_update_changelog)
+    apply = sub.add_parser("update-apply", help="Reinstall the widget from the current CLI binary")
+    apply.add_argument("--target", default="kde", choices=["kde", "waybar", "all"])
+    apply.set_defaults(func=command_update_apply)
+    dismiss = sub.add_parser("update-dismiss", help="Hide the update banner for a version")
+    dismiss.add_argument("--version", required=True)
+    dismiss.set_defaults(func=command_update_dismiss)
     set_state = sub.add_parser("set-state", help="Update a key in the widget state file")
     set_state.add_argument("--key", required=True)
     set_state.add_argument("--value", required=True)

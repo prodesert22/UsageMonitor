@@ -65,6 +65,35 @@ so the desktop widgets stay in step without a manual reinstall. `widget sync`
 never installs a widget that was not already installed, and the autostart entry
 is removed once the last widget is uninstalled.
 
+### Update notice in the widgets
+
+Beyond the silent login sync, each widget notices it is outdated itself: the
+popup compares its installed version with the CLI binary (local, no network)
+and shows a banner — **"Update X available (installed Y)"** — with three
+actions:
+
+- **What's new** — fetches the release notes for the new version (the
+  per-version file `releases/vX.Y.Z.md` from the repo first, GitHub Releases
+  API next, changelog bundled in the binary when offline; cached for a day)
+  and shows them inline, rendered from markdown. The settings **Updates** tab
+  fetches and shows the same notes.
+- **Update now** — reinstalls the widget from the current binary, the same
+  path as `usage-monitor-cli widget install <target>`. (On KDE, interface
+  changes in the new version load on the next Plasma restart; helper-only
+  changes apply immediately.)
+- **Dismiss (×)** — hides the popup notice for that version only. The update
+  stays visible in the settings **Updates** tab (versions, Update button and a
+  link to the release page), which always shows a pending update regardless of
+  the dismissal.
+
+From the terminal, the same state is available without the UI:
+
+```bash
+usage-monitor-cli widget check-update            # installed vs binary, per target
+usage-monitor-cli widget changelog 0.8.1         # release notes (GitHub, embedded fallback)
+usage-monitor-cli widget sync kde                # reinstall one outdated widget now
+```
+
 ## Available widgets
 
 - [KDE Plasma 6](kde.md) — native panel widget with settings, toggles,

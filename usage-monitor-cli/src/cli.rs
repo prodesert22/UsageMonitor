@@ -59,7 +59,13 @@ pub(crate) enum WidgetCmd {
     Uninstall(WidgetInstallArgs),
     /// Reinstall any already-installed widget whose version is older than this
     /// binary. Wired into login autostart so upgrades apply automatically.
-    Sync,
+    /// With a target, only that widget is synced.
+    Sync(WidgetSyncArgs),
+    /// Show installed vs binary versions without changing anything.
+    CheckUpdate(WidgetCheckUpdateArgs),
+    /// Print the release notes for a version (the releases/vX.Y.Z.md file in
+    /// the repo first, GitHub Releases API next, embedded CHANGELOG.md offline).
+    Changelog(WidgetChangelogArgs),
     Doctor,
 }
 
@@ -78,6 +84,26 @@ pub(crate) enum WidgetInstallTarget {
     All,
 }
 
+#[derive(Args, Clone)]
+pub(crate) struct WidgetSyncArgs {
+    #[arg(value_enum)]
+    pub(crate) target: Option<WidgetInstallTarget>,
+}
+
+#[derive(Args, Clone)]
+pub(crate) struct WidgetCheckUpdateArgs {
+    #[arg(value_enum)]
+    pub(crate) target: Option<WidgetInstallTarget>,
+    #[arg(long)]
+    pub(crate) pretty: bool,
+}
+
+#[derive(Args, Clone)]
+pub(crate) struct WidgetChangelogArgs {
+    pub(crate) version: String,
+    #[arg(long)]
+    pub(crate) pretty: bool,
+}
 #[derive(Args, Clone)]
 pub(crate) struct WidgetTargetArgs {
     pub(crate) provider: Option<String>,

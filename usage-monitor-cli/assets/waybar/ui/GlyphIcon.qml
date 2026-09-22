@@ -11,7 +11,7 @@ Canvas {
     id: glyph
 
     // One of: refresh, chart, pin, settings, close, add, remove, copy, clear,
-    // undo, font, accounts, search, drag, check.
+    // undo, font, accounts, search, drag, check, update, info.
     property string name: "refresh"
     property color color: "#ffffff"
     property real thickness: Math.max(1.2, Math.min(width, height) / 11)
@@ -175,6 +175,32 @@ Canvas {
             ctx.moveTo(cx - s * 0.26, cy)
             ctx.lineTo(cx - s * 0.06, cy + s * 0.2)
             ctx.lineTo(cx + s * 0.28, cy - s * 0.22)
+            ctx.stroke()
+        } else if (name === "update") {
+            // Down arrow into a tray: a newer version is ready to download.
+            ctx.beginPath()
+            ctx.moveTo(cx, cy - s * 0.32)
+            ctx.lineTo(cx, cy + s * 0.12)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(cx - s * 0.18, cy - s * 0.06)
+            ctx.lineTo(cx, cy + s * 0.12)
+            ctx.lineTo(cx + s * 0.18, cy - s * 0.06)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.moveTo(cx - s * 0.3, cy + s * 0.3)
+            ctx.lineTo(cx + s * 0.3, cy + s * 0.3)
+            ctx.stroke()
+        } else if (name === "info") {
+            ctx.beginPath()
+            ctx.arc(cx, cy, s * 0.3, 0, Math.PI * 2)
+            ctx.stroke()
+            ctx.beginPath()
+            ctx.arc(cx, cy - s * 0.12, glyph.thickness * 0.7, 0, Math.PI * 2)
+            ctx.fill()
+            ctx.beginPath()
+            ctx.moveTo(cx, cy - s * 0.0)
+            ctx.lineTo(cx, cy + s * 0.2)
             ctx.stroke()
         }
     }

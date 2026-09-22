@@ -28,6 +28,9 @@ Item {
     property bool busy: false
     property string errorText: ""
     property string errorDetails: ""
+    // Release notes for the Updates page (fetched on demand, sanitized by the
+    // helper, rendered as markdown — never executed).
+    property var updateNotes: ({"version": "", "url": "", "body": "", "source": ""})
     property string helperPath: localFilePath(Qt.resolvedUrl("../code/usage_monitor_kde.py"))
     property alias orderModel: providerOrderModel
 
@@ -103,6 +106,28 @@ Item {
 
     function cacheClear() {
         runHelper("cache-clear")
+    }
+
+    function updateShowChangelog() {
+        var u = (backend.settings && backend.settings.update) || ({})
+        if (!u.available || u.available === "unknown") {
+            return
+        }
+        if (backend.updateNotes.version === u.available) {
+            return
+        }
+        runHelper("update-changelog --version " + shellQuote(String(u.available)))
+    }
+
+    function updateApply() {
+        runHelper("update-apply --target kde")
+    }
+
+    function updateDismiss() {
+        var u = (backend.settings && backend.settings.update) || ({})
+        if (u.available) {
+            runHelper("update-dismiss --version " + shellQuote(String(u.available)))
+        }
     }
 
     // Settings live in the helper's state.json, so saving one emits no KConfig
@@ -192,6 +217,7 @@ Item {
             }
 
             var isSettings = sourceName.indexOf(" settings") !== -1
+            var isNotes = sourceName.indexOf(" update-changelog") !== -1
             var isManage = sourceName.indexOf(" set-provider ") !== -1
                 || sourceName.indexOf(" set-state ") !== -1
                 || sourceName.indexOf(" batch-set-state ") !== -1
@@ -199,10 +225,24 @@ Item {
                 || sourceName.indexOf(" account-remove ") !== -1
                 || sourceName.indexOf(" workspace-add ") !== -1
                 || sourceName.indexOf(" workspace-remove ") !== -1
+                || sourceName.indexOf(" update-apply ") !== -1
+                || sourceName.indexOf(" update-dismiss ") !== -1
 
             if (isManage) {
                 backend.notifyApplet()
                 backend.loadSettings()
+                return
+            }
+            if (isNotes) {
+                try {
+                    var notes = JSON.parse(data.stdout)
+                    if (notes && notes.version) {
+                        backend.updateNotes = notes
+                    }
+                } catch (e) {
+                    backend.errorText = "Invalid JSON from Usage Monitor helper"
+                    backend.errorDetails = String(e)
+                }
                 return
             }
             if (isSettings) {

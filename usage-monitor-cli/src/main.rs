@@ -98,7 +98,13 @@ async fn main() -> Result<()> {
             }
             WidgetCmd::Install(args) => widget::install::install(args.target, args.force)?,
             WidgetCmd::Uninstall(args) => widget::install::uninstall(args.target)?,
-            WidgetCmd::Sync => widget::install::sync()?,
+            WidgetCmd::Sync(args) => widget::install::sync(args.target)?,
+            WidgetCmd::CheckUpdate(args) => {
+                widget::update::run_check_update(args.target, args.pretty)?
+            }
+            WidgetCmd::Changelog(args) => {
+                widget::update::run_changelog(&args.version, args.pretty).await?
+            }
             WidgetCmd::Doctor => widget::install::doctor()?,
         },
         Command::Provider(args) => dynamic::handle_dynamic_provider_cmd(&registry, config, args)?,

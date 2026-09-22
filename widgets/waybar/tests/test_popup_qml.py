@@ -70,6 +70,8 @@ _SETTINGS = {
     "session": {"desktop": "hyprland", "type": "wayland"},
     "popupVersion": "test",
     "cliVersion": "test",
+    "update": {"installed": "0.8.0", "available": "0.8.1", "outdated": True,
+               "dismissed": False, "url": "https://example.com/releases/tag/v0.8.1"},
 }
 
 _HARNESS = """
@@ -91,6 +93,7 @@ QQC2.ApplicationWindow {
         property string summaryJson: '%(summary)s'
         property string settingsJson: '%(settings)s'
         property string costJson: '{"cost": [{"provider": "codex", "last30DaysCostUSD": 1.5}]}'
+        property string updateNotesJson: '{"version": "0.8.1", "url": "", "body": "notes", "source": "embedded"}'
         property bool busy: false
         property string errorText: ""
         property string errorDetails: ""
@@ -118,6 +121,9 @@ QQC2.ApplicationWindow {
         function workspaceAdd(a, b) { backend.record("workspaceAdd") }
         function workspaceRemove(a) { backend.record("workspaceRemove") }
         function cacheClear() { backend.record("cacheClear") }
+        function updateChangelog(v) { backend.record("updateChangelog:" + v) }
+        function applyUpdate() { backend.record("applyUpdate") }
+        function dismissUpdate(v) { backend.record("dismissUpdate:" + v) }
         function copyToClipboard(t) { backend.record("copyToClipboard") }
         function quitApp() { backend.record("quitApp") }
     }
@@ -153,6 +159,9 @@ QQC2.ApplicationWindow {
         result.providerCount = (popup.summary.providers || []).length
         result.pinnedPercent = popup.compactLabelPct()
         result.windowColorIsTransparent = String(popup.color) === "#00000000"
+        // The fixture settings carry an outdated update, so the banner shows.
+        result.updateBannerVisible = popup.updateBanner.visible === true
+        result.updateBannerText = popup.updateBanner.bannerText || ""
 
         var settingsComponent = Qt.createComponent("%(ui)s/SettingsWindow.qml")
         if (settingsComponent.status === Component.Error) {
@@ -267,6 +276,11 @@ class PopupQmlTests(unittest.TestCase):
 
     def test_both_windows_register_for_layer_shell_placement(self):
         self.assertEqual(self.payload["layerCalls"], ["applyLayerShell:popup", "applyLayerShell:settings"])
+
+    def test_update_banner_shows_when_settings_report_outdated(self):
+        self.assertTrue(self.payload["updateBannerVisible"], self.output)
+        self.assertIn("0.8.1", self.payload["updateBannerText"])
+        self.assertIn("0.8.0", self.payload["updateBannerText"])
 
     def test_settings_window_applies_pending_edits_in_one_batch(self):
         self.assertTrue(self.payload["dirty"])

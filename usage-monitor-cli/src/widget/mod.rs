@@ -6,6 +6,7 @@ use crate::fetch::provider_context;
 pub(crate) mod install;
 mod model;
 mod payload;
+pub(crate) mod update;
 
 pub(crate) use model::{WidgetProvider, WidgetSummary};
 

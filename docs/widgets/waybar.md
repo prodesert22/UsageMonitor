@@ -52,7 +52,9 @@ ready-to-paste module block. Remove it with
 `usage-monitor-cli widget doctor`. The installer records the version and adds a
 login autostart entry running `usage-monitor-cli widget sync`, so upgrading the
 CLI refreshes both parts automatically on the next login (see
-[Automatic upgrades](README.md#automatic-upgrades)).
+[Automatic upgrades](README.md#automatic-upgrades)). The popup also shows an
+update banner with the release notes and a one-click reinstall when it is
+older than the CLI (see [Update notice in the widgets](README.md#update-notice-in-the-widgets)).
 
 ### Popup dependency: Qt for Python
 

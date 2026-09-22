@@ -75,6 +75,9 @@ with `usage-monitor-cli widget uninstall kde`, and inspect resolved paths with
 The installer also records the version and adds a login autostart entry that
 runs `usage-monitor-cli widget sync`, so upgrading the CLI auto-upgrades the
 plasmoid on the next login (see [Automatic upgrades](README.md#automatic-upgrades)).
+The popup also shows an update banner with the release notes and a one-click
+reinstall when it is older than the CLI (see
+[Update notice in the widgets](README.md#update-notice-in-the-widgets)).
 
 Manual development install with `kpackagetool6` (equivalent to the above):
 
@@ -139,10 +142,12 @@ Usage Monitor auto-detects a single source per provider. The single-file helper
 tested without KDE running.
 
 The Plasma UI lives under `contents/ui/`: `main.qml` (panel + usage popup),
-`FullPopup.qml`, `UsagePage.qml`, `UsageBar.qml`, `ThemePalette.qml`,
-`ThemedToolButton.qml`; the config pages `configGeneral.qml`,
-`configProviders.qml`, `configOrder.qml`, `configTheme.qml` (+ the lazily loaded
-`FontPicker.qml`); and their shared helper plumbing `SettingsBackend.qml`.
+`FullPopup.qml`, `UpdateBanner.qml`, `UsagePage.qml`, `UsageBar.qml`,
+`ThemePalette.qml`, `ThemedToolButton.qml`; the config pages
+`configGeneral.qml`, `configProviders.qml`, `configOrder.qml`,
+`configTheme.qml`, `configUpdates.qml` (registered in
+`contents/config/config.qml`, + the lazily loaded `FontPicker.qml`); and their
+shared helper plumbing `SettingsBackend.qml`.
 
 ## Theming
 

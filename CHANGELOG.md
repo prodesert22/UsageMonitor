@@ -5,6 +5,25 @@ All notable changes to this project are documented here. The format is based on
 [Semantic Versioning](https://semver.org/spec/v2.0.0.html). Full per-release
 notes live in [`releases/`](releases/).
 
+## [Unreleased]
+
+### Added
+- **Widget update notice with changelog.** Both widgets compare their installed
+  version with the CLI binary on every popup open (local, no network) and show
+  a   banner — "Update X available (installed Y)" — with **What's new** (release
+  notes: the `releases/vX.Y.Z.md` file from the repo first, GitHub Releases
+  API next, embedded CHANGELOG.md fallback when offline; cached for a day), **Update now** (one-click reinstall through the same
+  path as `usage-monitor-cli widget install <target>`, no Plasma restart
+  needed) and **Dismiss** (hides the popup notice for that version only; the
+  settings **Updates** tab always shows a pending update).
+- Dedicated **Updates** tab in both widgets' settings (versions, status,
+  one-click reinstall, release-page link), which also fetches and renders the
+  changelog — dismissing the popup banner never hides it.
+- `usage-monitor-cli widget check-update [kde|waybar|all]` — installed vs
+  binary versions without changing anything; `widget changelog <version>` —
+  release notes (GitHub, embedded fallback); `widget sync [target]` now
+  accepts an optional target so the widget's Update button syncs only itself.
+
 ## [0.8.1]
 
 ### Added

@@ -22,4 +22,9 @@ ConfigModel {
         icon: "preferences-desktop-theme"
         source: "configTheme.qml"
     }
+    ConfigCategory {
+        name: "Updates"
+        icon: "system-software-update"
+        source: "configUpdates.qml"
+    }
 }

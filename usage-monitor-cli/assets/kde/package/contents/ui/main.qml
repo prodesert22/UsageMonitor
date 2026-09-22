@@ -21,6 +21,12 @@ PlasmoidItem {
     property string helperPath: localFilePath(Qt.resolvedUrl("../code/usage_monitor_kde.py"))
     property string monitorIcon: Qt.resolvedUrl("../images/usage-monitor.png")
 
+    // Self-update state (see UpdateBanner.qml).
+    property var updateNotes: ({"version": "", "url": "", "body": "", "source": ""})
+    property bool updateNotesOpen: false
+    property bool updateApplying: false
+    property string updateDone: ""
+
     // Shared palette for the panel bar and the popup. The summary payload
     // carries the theme too, so the bar is styled on the first refresh instead
     // of waiting for the (slower) settings payload.
@@ -180,6 +186,33 @@ PlasmoidItem {
         runHelper("cost")
     }
 
+    function updateShowChangelog() {
+        var u = (root.settings && root.settings.update) || ({})
+        if (!u.available || u.available === "unknown") {
+            return
+        }
+        // Toggle the notes panel; fetch only the first time per version.
+        if (root.updateNotesOpen && root.updateNotes.version === u.available) {
+            root.updateNotesOpen = false
+            return
+        }
+        runHelper("update-changelog --version " + shellQuote(String(u.available)))
+    }
+
+    function updateApply() {
+        root.updateApplying = true
+        root.updateDone = ""
+        runHelper("update-apply --target kde")
+    }
+
+    function updateDismiss() {
+        var u = (root.settings && root.settings.update) || ({})
+        if (!u.available) {
+            return
+        }
+        runHelper("update-dismiss --version " + shellQuote(String(u.available)))
+    }
+
     function openConfig() {
         Plasmoid.internalAction("configure").trigger()
     }
@@ -293,6 +326,28 @@ PlasmoidItem {
                     root.cost = payload
                 } else if (sourceName.indexOf(" settings") !== -1) {
                     root.settings = payload
+                } else if (sourceName.indexOf(" update-changelog") !== -1) {
+                    // Release notes for the update banner (empty body falls
+                    // back to the release-page link).
+                    root.updateNotes = payload
+                    root.updateNotesOpen = true
+                    return
+                } else if (sourceName.indexOf(" update-apply") !== -1) {
+                    // Same reinstall path as `widget install kde`.
+                    root.updateApplying = false
+                    if (payload.status === "ok") {
+                        root.updateDone = "Widget updated — reloading…"
+                        root.updateNotesOpen = false
+                        loadSettings()
+                        refresh()
+                    } else {
+                        root.errorText = "Widget update failed."
+                        root.errorDetails = payload.stderr || payload.stdout || ""
+                        return
+                    }
+                } else if (sourceName.indexOf(" update-dismiss") !== -1) {
+                    loadSettings()
+                    return
                 } else {
                     root.summary = payload
                 }

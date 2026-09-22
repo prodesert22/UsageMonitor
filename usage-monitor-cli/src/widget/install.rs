@@ -11,14 +11,22 @@ use crate::cli::WidgetInstallTarget;
 const KDE_ID: &str = "dev.usage-monitor.kde";
 const KDE_ICON_NAME: &str = "usage-monitor";
 const KDE_ICON_SOURCE: &str = "contents/images/usage-monitor.png";
-const VERSION: &str = env!("CARGO_PKG_VERSION");
-const TARGETS: [&str; 2] = ["kde", "waybar"];
+pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
+pub(crate) const TARGETS: [&str; 2] = ["kde", "waybar"];
 const WAYBAR_BIN: &str = "usage-monitor-waybar";
 /// Launcher for the Qt Quick popup (the KDE widget's UI, wired to `on-click`).
 const WAYBAR_POPUP_BIN: &str = "usage-monitor-waybar-popup";
 const WAYBAR_DESKTOP_FILE: &str = "usage-monitor-waybar.desktop";
 static KDE_PACKAGE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/kde/package");
 static WAYBAR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/waybar");
+
+/// Process-wide lock for tests that mutate HOME/XDG_*. Shared with
+/// `update.rs` tests so parallel threads never interleave environments.
+#[cfg(test)]
+pub(crate) fn test_env_lock() -> std::sync::MutexGuard<'static, ()> {
+    static LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    LOCK.lock().unwrap_or_else(|poisoned| poisoned.into_inner())
+}
 
 pub(crate) fn install(target: WidgetInstallTarget, force: bool) -> Result<()> {
     match target {
@@ -60,9 +68,16 @@ pub(crate) fn uninstall(target: WidgetInstallTarget) -> Result<()> {
 /// Reinstall any already-installed widget whose recorded version is older than
 /// this binary. Invoked from the login autostart entry so a CLI upgrade
 /// propagates to the widgets without the user re-running `widget install`.
-pub(crate) fn sync() -> Result<()> {
+/// With `target`, only that widget is synced (the widget update banner uses
+/// this so "Update now" runs the same path as `widget install <target>`).
+pub(crate) fn sync(target: Option<WidgetInstallTarget>) -> Result<()> {
+    let targets: Vec<&str> = match target {
+        Some(WidgetInstallTarget::Kde) => vec!["kde"],
+        Some(WidgetInstallTarget::Waybar) => vec!["waybar"],
+        Some(WidgetInstallTarget::All) | None => TARGETS.to_vec(),
+    };
     let mut upgraded = false;
-    for target in TARGETS {
+    for target in targets {
         let stamp = read_stamp(target)?;
         if !is_stale(stamp.as_deref()) {
             continue; // never installed, or already current
@@ -337,7 +352,7 @@ fn config_home() -> Result<PathBuf> {
     Ok(home_dir()?.join(".config"))
 }
 
-fn stamp_path(target: &str) -> Result<PathBuf> {
+pub(crate) fn stamp_path(target: &str) -> Result<PathBuf> {
     Ok(data_home()?.join(format!("usage-monitor/{target}.version")))
 }
 
@@ -349,7 +364,7 @@ fn write_stamp(target: &str) -> Result<()> {
     fs::write(&path, VERSION).with_context(|| format!("write {}", path.display()))
 }
 
-fn read_stamp(target: &str) -> Result<Option<String>> {
+pub(crate) fn read_stamp(target: &str) -> Result<Option<String>> {
     match fs::read_to_string(stamp_path(target)?) {
         Ok(value) => Ok(Some(value.trim().to_string())),
         Err(err) if err.kind() == std::io::ErrorKind::NotFound => Ok(None),
@@ -503,6 +518,7 @@ mod tests {
         // file here means a black window at the first `on-click`.
         for name in [
             "Popup.qml",
+            "UpdateBanner.qml",
             "UsagePage.qml",
             "UsageBar.qml",
             "ThemePalette.qml",
@@ -514,6 +530,7 @@ mod tests {
             "SettingsProviders.qml",
             "SettingsOrder.qml",
             "SettingsTheme.qml",
+            "SettingsUpdates.qml",
         ] {
             assert!(dest.join("ui").join(name).is_file(), "missing ui/{name}");
         }
@@ -543,6 +560,18 @@ mod tests {
             .unwrap();
         let value: serde_json::Value = serde_json::from_str(metadata).unwrap();
         assert_eq!(value["KPlugin"]["Icon"], KDE_ICON_NAME);
+    }
+
+    #[test]
+    fn kde_package_embeds_self_update_ui() {
+        // The Updates config tab and the popup banner ship inside the binary;
+        // a missing file here means a silent settings page at the first open.
+        for name in [
+            "contents/ui/configUpdates.qml",
+            "contents/ui/UpdateBanner.qml",
+        ] {
+            assert!(KDE_PACKAGE.get_file(name).is_some(), "missing {name}");
+        }
     }
 
     #[test]
@@ -666,17 +695,17 @@ mod tests {
     fn sync_upgrades_stale_and_is_noop_when_absent_or_current() {
         with_temp_home(|_| {
             // Nothing installed: sync must not create or install anything.
-            sync().unwrap();
+            sync(None).unwrap();
             assert_eq!(read_stamp("waybar").unwrap(), None);
 
             install(WidgetInstallTarget::Waybar, false).unwrap();
             // Already current: sync leaves the stamp untouched.
-            sync().unwrap();
+            sync(None).unwrap();
             assert_eq!(read_stamp("waybar").unwrap().as_deref(), Some(VERSION));
 
             // Simulate an older install, then sync should bump it back.
             fs::write(stamp_path("waybar").unwrap(), "0.0.1").unwrap();
-            sync().unwrap();
+            sync(Some(WidgetInstallTarget::Waybar)).unwrap();
             assert_eq!(read_stamp("waybar").unwrap().as_deref(), Some(VERSION));
         });
     }
@@ -719,10 +748,7 @@ mod tests {
     /// tempdir so the widget install paths resolve inside it. The lock keeps the
     /// process-global env consistent across parallel test threads.
     fn with_temp_home<R>(f: impl FnOnce(&Path) -> R) -> R {
-        static ENV_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
-        let _guard = ENV_LOCK
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let _guard = super::test_env_lock();
 
         let tmp = tempfile::tempdir().unwrap();
         let keys = ["HOME", "XDG_DATA_HOME", "XDG_CONFIG_HOME"];

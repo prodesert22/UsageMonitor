@@ -242,15 +242,41 @@ KCM.SimpleKCM {
             }
         }
 
+        Rectangle {
+            Layout.fillWidth: true
+            height: 1
+            color: Kirigami.Theme.disabledTextColor
+            opacity: 0.18
+        }
+
         RowLayout {
             Layout.fillWidth: true
             spacing: Kirigami.Units.largeSpacing
-            Layout.alignment: Qt.AlignRight
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+
+                PlasmaComponents3.Label {
+                    text: "Widget cache"
+                    opacity: 0.8
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+
+                PlasmaComponents3.Label {
+                    Layout.fillWidth: true
+                    text: "Clears the last-good cache. Refresh the widget after clearing."
+                    wrapMode: Text.WordWrap
+                    opacity: 0.65
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
+                }
+            }
 
             QQC2.ToolButton {
                 text: "Clear Cache"
                 icon.name: "edit-clear-history"
                 display: QQC2.AbstractButton.TextBesideIcon
+                Layout.alignment: Qt.AlignVCenter
                 onClicked: backend.cacheClear()
 
                 QQC2.ToolTip.visible: hovered

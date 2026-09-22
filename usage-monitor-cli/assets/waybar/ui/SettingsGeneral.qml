@@ -210,6 +210,17 @@ QQC2.ScrollView {
             Layout.fillWidth: true
             Layout.leftMargin: page.ui ? page.ui.largeSpacing : 8
             Layout.rightMargin: page.ui ? page.ui.largeSpacing : 8
+            text: "Widget updates live in the Updates tab."
+            wrapMode: Text.WordWrap
+            opacity: 0.65
+            font.pointSize: page.ui ? page.ui.smallFontSize : 9
+            color: page.ui ? page.ui.subtextColor : "#98989d"
+        }
+
+        QQC2.Label {
+            Layout.fillWidth: true
+            Layout.leftMargin: page.ui ? page.ui.largeSpacing : 8
+            Layout.rightMargin: page.ui ? page.ui.largeSpacing : 8
             text: "Header text"
             opacity: 0.9
             font.pointSize: page.ui ? page.ui.smallFontSize : 9
@@ -299,10 +310,47 @@ QQC2.ScrollView {
                     color: page.ui ? page.ui.subtextColor : "#98989d"
                 }
             }
+        }
+
+        Rectangle {
+            Layout.fillWidth: true
+            Layout.leftMargin: page.ui ? page.ui.largeSpacing : 8
+            Layout.rightMargin: page.ui ? page.ui.largeSpacing : 8
+            Layout.preferredHeight: 1
+            color: page.ui ? page.ui.borderColor : "#48484a"
+            opacity: 0.35
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            Layout.leftMargin: page.ui ? page.ui.largeSpacing : 8
+            Layout.rightMargin: page.ui ? page.ui.largeSpacing : 8
+            spacing: page.ui ? page.ui.smallSpacing : 4
+
+            ColumnLayout {
+                Layout.fillWidth: true
+                spacing: 0
+
+                QQC2.Label {
+                    text: "Popup cache"
+                    opacity: 0.8
+                    font.pointSize: page.ui ? page.ui.smallFontSize : 9
+                    color: page.ui ? page.ui.textColor : "#f5f5f7"
+                }
+
+                QQC2.Label {
+                    Layout.fillWidth: true
+                    text: "Clears the last-good cache. Refresh the popup after clearing."
+                    wrapMode: Text.WordWrap
+                    opacity: 0.65
+                    font.pointSize: page.ui ? page.ui.smallFontSize : 9
+                    color: page.ui ? page.ui.subtextColor : "#98989d"
+                }
+            }
 
             QQC2.Button {
                 text: "Clear cache"
-                Layout.alignment: Qt.AlignBottom
+                Layout.alignment: Qt.AlignVCenter
                 onClicked: backend.cacheClear()
 
                 QQC2.ToolTip.visible: hovered

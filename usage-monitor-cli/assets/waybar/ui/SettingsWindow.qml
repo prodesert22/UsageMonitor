@@ -87,6 +87,7 @@ QQC2.ApplicationWindow {
         QQC2.TabButton { text: "Providers" }
         QQC2.TabButton { text: "Order" }
         QQC2.TabButton { text: "Theme" }
+        QQC2.TabButton { text: "Updates" }
     }
 
     footer: Item {
@@ -137,5 +138,6 @@ QQC2.ApplicationWindow {
         SettingsProviders { host: settingsWindow }
         SettingsOrder { host: settingsWindow }
         SettingsTheme { host: settingsWindow }
+        SettingsUpdates { host: settingsWindow }
     }
 }

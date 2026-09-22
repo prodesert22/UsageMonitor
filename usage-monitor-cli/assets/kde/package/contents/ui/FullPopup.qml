@@ -149,6 +149,10 @@ Item {
             opacity: root.ui.themed ? 0.6 : 0.25
         }
 
+        UpdateBanner {
+            Layout.fillWidth: true
+        }
+
         PlasmaComponents3.Label {
             visible: root.errorText.length > 0
             Layout.fillWidth: true

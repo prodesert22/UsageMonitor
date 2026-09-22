@@ -563,6 +563,8 @@ def _build_backend_class(qt: dict[str, Any]):
         summaryJsonChanged = Signal()
         settingsJsonChanged = Signal()
         costJsonChanged = Signal()
+        updateNotesChanged = Signal()
+        updateResultChanged = Signal()
         busyChanged = Signal()
         errorChanged = Signal()
         jobFinished = Signal(str, str, str)
@@ -586,6 +588,8 @@ def _build_backend_class(qt: dict[str, Any]):
                 "themeState": {}, "popupVersion": data.POPUP_VERSION, "cliVersion": "",
             })
             self._cost = json.dumps({"cost": [], "updatedAt": ""})
+            self._update_notes = json.dumps({"version": "", "url": "", "body": "", "source": ""})
+            self._update_result = json.dumps({"status": ""})
             self._busy = False
             self._pending = 0
             self._error_text = ""
@@ -602,6 +606,12 @@ def _build_backend_class(qt: dict[str, Any]):
 
         def _get_cost(self) -> str:
             return self._cost
+
+        def _get_update_notes(self) -> str:
+            return self._update_notes
+
+        def _get_update_result(self) -> str:
+            return self._update_result
 
         def _get_busy(self) -> bool:
             return self._busy
@@ -627,6 +637,8 @@ def _build_backend_class(qt: dict[str, Any]):
         summaryJson = Property(str, _get_summary, notify=summaryJsonChanged)
         settingsJson = Property(str, _get_settings, notify=settingsJsonChanged)
         costJson = Property(str, _get_cost, notify=costJsonChanged)
+        updateNotesJson = Property(str, _get_update_notes, notify=updateNotesChanged)
+        updateResultJson = Property(str, _get_update_result, notify=updateResultChanged)
         busy = Property(bool, _get_busy, notify=busyChanged)
         errorText = Property(str, _get_error_text, notify=errorChanged)
         errorDetails = Property(str, _get_error_details, notify=errorChanged)
@@ -669,7 +681,26 @@ def _build_backend_class(qt: dict[str, Any]):
             elif kind == "cost":
                 self._cost = payload
                 self.costJsonChanged.emit()
-            elif kind == "mutation":
+            elif kind == "update-notes":
+                # Release notes for the update banner; invalid JSON keeps the
+                # previous notes so the banner links the release page instead.
+                try:
+                    notes = json.loads(payload or "{}")
+                    if isinstance(notes, dict) and notes.get("version"):
+                        self._update_notes = payload
+                        self.updateNotesChanged.emit()
+                except json.JSONDecodeError:
+                    pass
+            elif kind in ("mutation", "update-mutation"):
+                if kind == "update-mutation":
+                    # Kept for the banner's ok/error message (KDE parity).
+                    try:
+                        stored = json.loads(payload or "{}")
+                        if isinstance(stored, dict) and stored.get("status"):
+                            self._update_result = payload
+                            self.updateResultChanged.emit()
+                    except json.JSONDecodeError:
+                        pass
                 # A write (provider toggle, account, state) only reports the CLI
                 # status; reload the settings so the UI reflects what landed.
                 result = json.loads(payload or "{}")
@@ -702,6 +733,24 @@ def _build_backend_class(qt: dict[str, Any]):
         @Slot()
         def fetchCost(self) -> None:
             self._start("cost", data.cost_payload)
+
+        @Slot(str)
+        def updateChangelog(self, version: str) -> None:
+            """Release notes for the update banner (GitHub, cached, offline-safe)."""
+            self._start("update-notes", lambda: data.fetch_changelog(version))
+
+        @Slot()
+        def applyUpdate(self) -> None:
+            """Reinstall the widget from the current binary (same as `install`)."""
+            self._start("update-mutation", lambda: _result(data.apply_update("waybar")))
+
+        @Slot(str)
+        def dismissUpdate(self, version: str) -> None:
+            def work() -> dict[str, Any]:
+                data.set_state_key(data.UPDATE_DISMISS_KEY, version)
+                return {"status": "ok"}
+
+            self._start("mutation", work)
 
         @Slot(str, str)
         def saveStateKey(self, key: str, value: str) -> None:

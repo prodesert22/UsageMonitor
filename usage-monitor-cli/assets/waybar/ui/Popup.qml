@@ -29,6 +29,8 @@ QQC2.ApplicationWindow {
     readonly property string monitorIcon: backend.uiDir + "/images/usage-monitor.png"
 
     property alias ui: themePalette
+    // Test hook for the QML smoke test (widgets/waybar/tests/test_popup_qml.py).
+    property alias updateBanner: updateBannerItem
 
     ThemePalette {
         id: themePalette
@@ -66,14 +68,23 @@ QQC2.ApplicationWindow {
 
     onVisibleChanged: {
         if (visible) {
-            root.refresh()
+            root.refreshOnOpen()
         } else if (!root.residentMode) {
             Qt.quit()
         }
     }
 
+    // Summary only: the timer path. Settings (slow, ~30 helper calls) reload
+    // on open and on demand, never on tick.
     function refresh() {
         backend.refresh()
+    }
+
+    // Summary + settings: open path, so a CLI upgrade made while the popup
+    // was closed shows the update banner immediately.
+    function refreshOnOpen() {
+        backend.refresh()
+        backend.loadSettings()
     }
 
     function pinKey(entry) {
@@ -290,6 +301,11 @@ QQC2.ApplicationWindow {
             Layout.preferredHeight: 1
             color: root.ui.borderColor
             opacity: 0.6
+        }
+
+        UpdateBanner {
+            id: updateBannerItem
+            Layout.fillWidth: true
         }
 
         QQC2.Label {

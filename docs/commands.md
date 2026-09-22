@@ -14,7 +14,9 @@ desktop widgets, see [widgets/README.md](widgets/README.md).
 | `widget kde [provider] [--account <name>] [--pretty]` | Emit the JSON payload consumed by the KDE Plasma widget helper |
 | `widget install <kde\|waybar\|all> [--force]` | Install an embedded desktop widget (KDE via `kpackagetool6`, Waybar wrapper into `~/.local/bin`) |
 | `widget uninstall <kde\|waybar\|all>` | Remove an installed widget |
-| `widget sync` | Reinstall any installed widget older than the CLI (run at login by an autostart entry, so upgrades apply automatically) |
+| `widget sync [kde\|waybar\|all]` | Reinstall any installed widget older than the CLI (run at login by an autostart entry, so upgrades apply automatically); with a target, only that widget is synced |
+| `widget check-update [kde\|waybar\|all] [--pretty]` | Show installed vs binary widget versions without changing anything (what the widget banner is based on) |
+| `widget changelog <version> [--pretty]` | Print the release notes for a version (repo release file first, GitHub Releases API next, embedded CHANGELOG.md offline) |
 | `widget doctor` | Print resolved widget install paths, versions, and tool availability |
 | `enable <provider>` | Force a provider on, regardless of detection |
 | `disable <provider>` | Force a provider off; it is skipped by `fetch` and direct fetches are refused |

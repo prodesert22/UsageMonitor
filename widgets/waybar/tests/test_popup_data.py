@@ -438,5 +438,110 @@ class SessionTests(unittest.TestCase):
             self.assertEqual(data.desktop_environment(), "sway")
 
 
+class UpdateTests(unittest.TestCase):
+    def _env(self, td):
+        return {"XDG_CONFIG_HOME": f"{td}/config", "XDG_CACHE_HOME": f"{td}/cache", "HOME": td}
+
+    def _proc(self, stdout="", returncode=0, stderr=""):
+        return subprocess.CompletedProcess(["usage-monitor-cli"], returncode, stdout, stderr)
+
+    def test_compare_versions_orders_releases(self):
+        self.assertLess(data.compare_versions("0.8.0", "0.8.1"), 0)
+        self.assertEqual(data.compare_versions("0.8.1", "0.8.1"), 0)
+        self.assertEqual(data.compare_versions("0.8", "0.8.0"), 0)
+        self.assertGreater(data.compare_versions("v0.9", "0.8.1"), 0)
+
+    def test_is_outdated_ignores_missing_and_unknown(self):
+        self.assertFalse(data.is_outdated("", "0.8.1"))
+        self.assertFalse(data.is_outdated(None, "0.8.1"))
+        self.assertFalse(data.is_outdated("0.8.0", "unknown"))
+        self.assertFalse(data.is_outdated("0.8.1", "0.8.1"))
+        self.assertFalse(data.is_outdated("0.9.0", "0.8.1"))
+        self.assertTrue(data.is_outdated("0.8.0", "0.8.1"))
+
+    def test_update_info_reports_outdated_with_release_url(self):
+        info = data.update_info("0.8.0", "0.8.1", {})
+        self.assertTrue(info["outdated"])
+        self.assertFalse(info["dismissed"])
+        self.assertIn("/releases/tag/v0.8.1", info["url"])
+
+    def test_update_info_honours_dismissal(self):
+        info = data.update_info("0.8.0", "0.8.1", {"dismissedUpdateVersion": "0.8.1"})
+        self.assertTrue(info["outdated"])
+        self.assertTrue(info["dismissed"])
+        current = data.update_info("0.8.1", "0.8.1", {})
+        self.assertFalse(current["outdated"])
+        self.assertEqual(current["url"], "")
+
+    def _write_release_cache(self, version, age_seconds, payload):
+        from datetime import datetime, timezone
+        stamp = datetime.now(timezone.utc).timestamp() - age_seconds
+        iso = datetime.fromtimestamp(stamp, timezone.utc).isoformat().replace("+00:00", "Z")
+        data.write_json(data._release_cache_path(version), {"fetchedAt": iso, "payload": payload})
+
+    def test_fetch_changelog_serves_fresh_cache_without_spawning(self):
+        cached = {"version": "0.8.1", "url": "u", "body": "notes", "source": "github"}
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, self._env(td), clear=True):
+            self._write_release_cache("0.8.1", 60, cached)
+            runner = mock.Mock(side_effect=AssertionError("must not spawn"))
+            self.assertEqual(data.fetch_changelog("0.8.1", runner=runner), cached)
+
+    def test_fetch_changelog_stores_successful_fetch(self):
+        body = {"version": "0.8.1", "url": "u", "body": "notes", "source": "github"}
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, self._env(td), clear=True):
+            runner = lambda args: self._proc(json.dumps(body))
+            self.assertEqual(data.fetch_changelog("0.8.1", runner=runner), body)
+            # Second call is served from the cache just written.
+            failing = mock.Mock(side_effect=AssertionError("must use cache"))
+            self.assertEqual(data.fetch_changelog("0.8.1", runner=failing), body)
+
+    def test_fetch_changelog_falls_back_to_stale_cache_then_unavailable(self):
+        stale = {"version": "0.8.1", "url": "u", "body": "old", "source": "github"}
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, self._env(td), clear=True):
+            dead = lambda args: self._proc(returncode=1, stderr="offline")
+            # No cache at all: report unavailable with the release page URL.
+            missing = data.fetch_changelog("0.8.1", runner=dead)
+            self.assertEqual(missing["source"], "unavailable")
+            self.assertIn("/releases/tag/v0.8.1", missing["url"])
+            # A stale cache beats "unavailable" when the fetch fails.
+            self._write_release_cache("0.8.1", 48 * 3600, stale)
+            self.assertEqual(data.fetch_changelog("0.8.1", runner=dead), stale)
+
+    def test_apply_update_runs_widget_install_for_target(self):
+        run = mock.Mock(return_value=self._proc("ok"))
+        data.apply_update("waybar", runner=run)
+        self.assertEqual(run.call_args.args[0], ["widget", "install", "waybar"])
+
+    def test_update_dismiss_records_version_in_state(self):
+        import argparse
+
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, self._env(td), clear=True):
+            args = argparse.Namespace(version="0.8.1")
+            data.command_update_dismiss(args)
+            self.assertEqual(data.state_value(key="dismissedUpdateVersion"), "0.8.1")
+
+    def test_fetch_changelog_survives_runner_crash(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, self._env(td), clear=True):
+            missing = data.fetch_changelog("0.8.1", runner=mock.Mock(side_effect=FileNotFoundError("no cli")))
+            self.assertEqual(missing["source"], "unavailable")
+            self.assertIn("/releases/tag/v0.8.1", missing["url"])
+
+    def test_release_cache_path_cannot_escape_cache_dir(self):
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, self._env(td), clear=True):
+            cache_dir = data.paths().cache_dir
+            path = data._release_cache_path("../../evil")
+            self.assertEqual(path.parent, cache_dir)
+            self.assertNotIn(os.sep, path.name)
+
+    def test_fetch_changelog_caches_body_verbatim(self):
+        raw = {"version": "0.8.1", "url": "u", "body": "## Notes\n- item", "source": "release-file"}
+        with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, self._env(td), clear=True):
+            runner = lambda args: self._proc(json.dumps(raw))
+            fetched = data.fetch_changelog("0.8.1", runner=runner)
+            self.assertEqual(fetched["body"], raw["body"])
+            again = data.fetch_changelog("0.8.1", runner=mock.Mock(side_effect=AssertionError("cache")))
+            self.assertEqual(again["body"], raw["body"])
+
+
 if __name__ == "__main__":
     unittest.main()
