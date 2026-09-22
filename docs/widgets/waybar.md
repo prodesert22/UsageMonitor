@@ -158,7 +158,8 @@ What it shows — the same layout as the KDE Plasma widget:
 - a settings window with four pages:
   - **General** — refresh interval, show account email, keep-open default, popup
     position, pinned provider or account (`provider`, or `provider/account`
-    when a provider has several logins), clear cache;
+    when a provider has several logins), the Session/Weekly/Monthly windows
+    shown in the header text, clear cache;
   - **Providers** — enable/disable, add/remove named accounts (with the same
     per-provider credential fields and setup hints as the Plasma widget) and
     opencode-go workspaces;

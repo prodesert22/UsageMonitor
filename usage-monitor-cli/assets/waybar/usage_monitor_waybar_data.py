@@ -77,6 +77,7 @@ PROVIDER_NAMES = {
     "gemini": "Gemini",
 }
 WINDOW_LABELS = {"primary": "Session", "secondary": "Weekly", "tertiary": "Monthly"}
+WINDOW_SLOTS = ("primary", "secondary", "tertiary")
 
 CONNECT_HINTS = {
     "claude": "Run `claude` and sign in, then refresh. Credentials are auto-detected.",
@@ -969,15 +970,39 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
     provider_id = str(item.get("provider_id") or "")
     windows = item.get("windows") if isinstance(item.get("windows"), list) else []
     usage: dict[str, Any] = {}
-    slots = ["primary", "secondary", "tertiary"]
-    # usage-monitor already emits windows in primary/secondary/tertiary order;
-    # map positionally so the QML's fixed Session/Weekly/Monthly labels line up.
-    for slot, window in zip(slots, [w for w in windows if isinstance(w, dict)], strict=False):
-        usage[slot] = {
+    extras: list[dict[str, Any]] = []
+    # Match windows to slots by id: the CLI appends named extra windows
+    # (e.g. Codex "Additional" rate limits, opencode-go workspaces) after the
+    # standard ones, and mapping positionally mislabels them as Monthly.
+    for window in [w for w in windows if isinstance(w, dict)]:
+        wid = str(window.get("id") or "")
+        slot = {
             "usedPercent": _percent(window.get("percentage")) or 0.0,
             "resetsAt": None,
             "resetDescription": str(window.get("resets_at") or ""),
         }
+        if wid in WINDOW_SLOTS and wid not in usage:
+            usage[wid] = slot
+        else:
+            extras.append(
+                {
+                    "label": str(window.get("label") or wid or "Additional"),
+                    "usedPercent": slot["usedPercent"],
+                    "resetDescription": slot["resetDescription"],
+                }
+            )
+    if not usage and extras:
+        # Legacy fallback: a provider emitting only unnamed windows keeps the
+        # old positional mapping so its cards are not blank.
+        for key, extra in zip(WINDOW_SLOTS, extras, strict=False):
+            usage[key] = {
+                "usedPercent": extra["usedPercent"],
+                "resetsAt": None,
+                "resetDescription": extra["resetDescription"],
+            }
+        extras = extras[len(usage):]
+    if extras:
+        usage["extra"] = extras
     identity = item.get("account_email") or item.get("account_label") or item.get("account_id") or ""
     usage["identity"] = {
         "accountEmail": str(identity or ""),
@@ -1023,7 +1048,7 @@ def merge_with_cache(entries: list[dict[str, Any]], requested: list[str], last_g
     fresh = successful_entries(entries)
     previous = load_json(last_good_path, [])
     previous_ok = {
-        entry.get("provider"): entry
+        _cache_key(entry): entry
         for entry in previous
         if isinstance(entry, dict) and entry.get("provider") and not entry.get("error")
     }
@@ -1033,21 +1058,22 @@ def merge_with_cache(entries: list[dict[str, Any]], requested: list[str], last_g
         for entry in fresh:
             clean = dict(entry)
             clean.pop("stale", None)
-            merged_cache[clean.get("provider")] = clean
+            merged_cache[_cache_key(clean)] = clean
         write_json(last_good_path, list(merged_cache.values()))
         previous_ok = merged_cache
 
-    seen = {entry.get("provider") for entry in entries if entry.get("provider")}
+    seen_keys = {_cache_key(entry) for entry in entries if isinstance(entry, dict) and entry.get("provider")}
+    seen_providers = {entry.get("provider") for entry in entries if isinstance(entry, dict) and entry.get("provider")}
     output: list[dict[str, Any]] = []
     for entry in entries:
-        provider = entry.get("provider")
-        if entry.get("error") and provider in previous_ok:
-            output.append(dict(previous_ok[provider], stale=True))
+        key = _cache_key(entry)
+        if entry.get("error") and key in previous_ok:
+            output.append(dict(previous_ok[key], stale=True))
         else:
             output.append(entry)
-    for provider in requested:
-        if provider not in seen and provider in previous_ok:
-            output.append(dict(previous_ok[provider], stale=True))
+    for wanted in requested:
+        if wanted not in seen_keys and wanted not in seen_providers and wanted in previous_ok:
+            output.append(dict(previous_ok[wanted], stale=True))
     return output
 
 
@@ -1134,6 +1160,15 @@ def tooltip_lines(entries: list[dict[str, Any]]) -> list[str]:
             suffix = reset_text(window)
             stale = " (stale)" if entry.get("stale") else ""
             lines.append(f"{name} {label.lower()}: {pct_label(percent)}" + (f" — {suffix}" if suffix else "") + stale)
+        for extra in usage.get("extra") or []:
+            if not isinstance(extra, dict):
+                continue
+            percent = _percent(extra.get("usedPercent"))
+            if percent is None:
+                continue
+            suffix = str(extra.get("resetDescription") or "").strip()
+            stale = " (stale)" if entry.get("stale") else ""
+            lines.append(f"{name} {str(extra.get('label') or 'additional').lower()}: {pct_label(percent)}" + (f" — {suffix}" if suffix else "") + stale)
     return lines
 
 
@@ -1145,23 +1180,71 @@ def pin_key_for_entry(entry: dict[str, Any]) -> str:
     return f"{provider}/{account}" if account else provider
 
 
-def bar_text(entries: list[dict[str, Any]], pinned_provider: str = "") -> str:
-    pinned = None
-    if pinned_provider:
-        pinned = next((entry for entry in entries if pin_key_for_entry(entry) == pinned_provider), None)
-        if pinned is None and "/" not in pinned_provider:
-            # Legacy provider-level pin: first entry of that provider.
-            pinned = next((entry for entry in entries if entry.get("provider") == pinned_provider), None)
+def _cache_key(entry: dict[str, Any]) -> str:
+    """Cache key of a usage entry: the pin key, so two accounts of one
+    provider no longer overwrite each other in the last-good cache."""
+    return pin_key_for_entry(entry)
+
+
+# State keys behind the "Session / Weekly / Monthly" bar-text checkboxes.
+BAR_WINDOW_STATE_KEYS = {"primary": "barSession", "secondary": "barWeekly", "tertiary": "barMonthly"}
+
+
+def enabled_bar_windows(state: dict[str, Any] | None = None) -> list[str]:
+    """Slots shown in the bar text, from widget state (all on by default)."""
+    sf = state or {}
+    return [slot for slot in WINDOW_SLOTS if sf.get(BAR_WINDOW_STATE_KEYS[slot], "true") != "false"]
+
+
+def _match_pinned(entries: list[dict[str, Any]], pinned_provider: str = "") -> dict[str, Any] | None:
+    if not pinned_provider:
+        return None
+    pinned = next((entry for entry in entries if pin_key_for_entry(entry) == pinned_provider), None)
+    if pinned is None and "/" not in pinned_provider:
+        # Legacy provider-level pin: first entry of that provider.
+        pinned = next((entry for entry in entries if entry.get("provider") == pinned_provider), None)
+    return pinned
+
+
+def bar_text(
+    entries: list[dict[str, Any]],
+    pinned_provider: str = "",
+    windows: list[str] | None = None,
+) -> str:
+    slots = [slot for slot in WINDOW_SLOTS if windows is None or slot in windows]
+    pinned = _match_pinned(entries, pinned_provider)
     if pinned and not pinned.get("error"):
-        values = [window_percent(pinned, key) for key in WINDOW_LABELS]
+        values = [window_percent(pinned, key) for key in slots]
         values = [value for value in values if value is not None]
         if values:
             return " • ".join(pct_label(value) for value in values)
-        return pct_label(max_percent(pinned))
+        if slots:
+            return pct_label(max_percent(pinned))
+        return ""
     usable = [max_percent(entry) for entry in entries if not entry.get("error")]
     if usable:
         return pct_label(max(usable))
     return "⚠"
+
+
+def pinned_percent(
+    entries: list[dict[str, Any]],
+    pinned_provider: str = "",
+    windows: list[str] | None = None,
+) -> float | None:
+    """Headline number for the pinned entry over the enabled windows, driving
+    the bar colour/bold in QML. None when nothing is pinned or usable."""
+    slots = [slot for slot in WINDOW_SLOTS if windows is None or slot in windows]
+    pinned = _match_pinned(entries, pinned_provider)
+    if not pinned or pinned.get("error"):
+        return None
+    values = [window_percent(pinned, key) for key in slots]
+    values = [value for value in values if value is not None]
+    if values:
+        return max(values)
+    if slots:
+        return max_percent(pinned)
+    return None
 
 
 def classify(entries: list[dict[str, Any]]) -> str:
@@ -1190,16 +1273,22 @@ def enrich_entries(entries: list[dict[str, Any]]) -> list[dict[str, Any]]:
     return enriched
 
 
-def summarize(entries: list[dict[str, Any]], pinned_provider: str = "") -> dict[str, Any]:
+def summarize(
+    entries: list[dict[str, Any]],
+    pinned_provider: str = "",
+    bar_windows: list[str] | None = None,
+) -> dict[str, Any]:
     pct = max([max_percent(entry) for entry in entries if not entry.get("error")], default=0.0)
     lines = tooltip_lines(entries)
     providers = enrich_entries(entries)
+    windows = [slot for slot in WINDOW_SLOTS if bar_windows is None or slot in bar_windows]
     return {
-        "text": bar_text(providers, pinned_provider),
+        "text": bar_text(providers, pinned_provider, windows),
         "tooltip": "\n".join(lines) if lines else "Usage Monitor: no provider data",
         "class": classify(providers),
         "percentage": pct,
         "barProvider": pinned_provider,
+        "pinnedPercent": pinned_percent(providers, pinned_provider, windows),
         "providers": _sort_by_order(providers),
         "updatedAt": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
     }
@@ -1387,6 +1476,9 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
         "noCredits": sf.get("noCredits", "false") == "true",
         "showBarText": sf.get("showBarText", "true") != "false",
         "showAccountEmail": sf.get("showAccountEmail", "true") != "false",
+        "barSession": sf.get("barSession", "true") != "false",
+        "barWeekly": sf.get("barWeekly", "true") != "false",
+        "barMonthly": sf.get("barMonthly", "true") != "false",
         "providerOrder": sf.get("providerOrder", "[]"),
         "popupAnchor": str(sf.get("popupAnchor", "auto") or "auto"),
         "keepOpen": sf.get("keepOpen", "false") == "true",
@@ -1538,7 +1630,7 @@ def summary_payload(force: bool = False) -> dict[str, Any]:
 
     try:
         entries = fetch_entries()
-        requested = [e.get("provider") for e in entries if e.get("provider")]
+        requested = [_cache_key(e) for e in entries if isinstance(e, dict) and e.get("provider")]
         merged = merge_with_cache(entries, requested, p.last_good)
         if not requested:
             # The CLI as a whole failed (missing binary, crash, unparsable
@@ -1549,7 +1641,11 @@ def summary_payload(force: bool = False) -> dict[str, Any]:
             if isinstance(cached, list):
                 merged = [dict(e, stale=True) for e in cached if isinstance(e, dict)] + merged
         _record_fetch(bool(successful_entries(entries)))
-        payload = summarize(merged, str(sf.get("barProvider", "") or ""))
+        payload = summarize(
+            merged,
+            str(sf.get("barProvider", "") or ""),
+            bar_windows=enabled_bar_windows(sf),
+        )
         payload["theme"] = resolve_theme(sf)
         payload["cached"] = False
         return payload
@@ -1560,7 +1656,11 @@ def summary_payload(force: bool = False) -> dict[str, Any]:
 def cache_payload() -> dict[str, Any]:
     cached = load_json(paths().last_good, [])
     sf = state_full(paths().state)
-    payload = summarize(cached if isinstance(cached, list) else [], str(sf.get("barProvider", "") or ""))
+    payload = summarize(
+        cached if isinstance(cached, list) else [],
+        str(sf.get("barProvider", "") or ""),
+        bar_windows=enabled_bar_windows(sf),
+    )
     payload["theme"] = resolve_theme(sf)
     return payload
 

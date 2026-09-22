@@ -259,6 +259,62 @@ class FetchTests(unittest.TestCase):
             [{"id": "codex", "displayName": "Codex"}],
         )
 
+    def test_extra_windows_do_not_fill_monthly_slot(self):
+        payload = {"providers": [{"provider_id": "codex", "windows": [
+            {"id": "primary", "percentage": 10.0},
+            {"id": "secondary", "percentage": 98.0},
+            {"id": "Additional", "label": "Additional", "percentage": 0.0},
+        ]}]}
+
+        def runner(args):
+            return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
+
+        entries = data.fetch_entries(runner)
+        self.assertNotIn("tertiary", entries[0]["usage"])
+        summary = data.summarize(entries, "codex")
+        self.assertEqual(summary["text"], "10% • 98%")
+        self.assertIn("Codex additional: 0%", summary["tooltip"])
+        self.assertEqual(summary["pinnedPercent"], 98.0)
+
+    def test_bar_text_respects_enabled_windows(self):
+        entries = [
+            {"provider": "kimi", "account": "",
+             "usage": {"primary": {"usedPercent": 28.0},
+                       "secondary": {"usedPercent": 46.0},
+                       "tertiary": {"usedPercent": 31.0}}},
+        ]
+        self.assertEqual(
+            data.bar_text(entries, "kimi", ["primary", "secondary"]), "28% • 46%"
+        )
+        self.assertEqual(data.bar_text(entries, "kimi", ["tertiary"]), "31%")
+        self.assertEqual(data.pinned_percent(entries, "kimi", ["tertiary"]), 31.0)
+        self.assertIsNone(data.pinned_percent(entries, ""))
+
+    def test_enabled_bar_windows_reads_state(self):
+        self.assertEqual(data.enabled_bar_windows({}), ["primary", "secondary", "tertiary"])
+        self.assertEqual(data.enabled_bar_windows({"barMonthly": "false"}), ["primary", "secondary"])
+
+    def test_merge_with_cache_keeps_two_accounts_separate(self):
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td) / "last.json"
+            good = [
+                {"provider": "codex", "account": "",
+                 "usage": {"primary": {"usedPercent": 10.0}}},
+                {"provider": "codex", "account": "plus2",
+                 "usage": {"primary": {"usedPercent": 5.0}}},
+            ]
+            data.merge_with_cache(good, ["codex", "codex/plus2"], cache)
+            self.assertEqual(len(json.loads(cache.read_text())), 2)
+            failed = [
+                {"provider": "codex", "account": "", "error": {"message": "nope"}},
+                {"provider": "codex", "account": "plus2", "error": {"message": "nope"}},
+            ]
+            merged = data.merge_with_cache(failed, ["codex", "codex/plus2"], cache)
+            self.assertEqual(len(merged), 2)
+            by_account = {m["account"]: m for m in merged}
+            self.assertEqual(by_account[""]["usage"]["primary"]["usedPercent"], 10.0)
+            self.assertEqual(by_account["plus2"]["usage"]["primary"]["usedPercent"], 5.0)
+
     def test_merge_with_cache_marks_failed_providers_stale(self):
         with tempfile.TemporaryDirectory() as td:
             cache = Path(td) / "last.json"

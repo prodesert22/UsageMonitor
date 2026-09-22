@@ -206,6 +206,17 @@ QQC2.ScrollView {
             opacity: 0.35
         }
 
+        QQC2.Label {
+            Layout.fillWidth: true
+            Layout.leftMargin: page.ui ? page.ui.largeSpacing : 8
+            Layout.rightMargin: page.ui ? page.ui.largeSpacing : 8
+            text: "Header text"
+            opacity: 0.9
+            font.pointSize: page.ui ? page.ui.smallFontSize : 9
+            font.bold: true
+            color: page.ui ? page.ui.textColor : "#f5f5f7"
+        }
+
         RowLayout {
             Layout.fillWidth: true
             Layout.leftMargin: page.ui ? page.ui.largeSpacing : 8
@@ -246,6 +257,36 @@ QQC2.ScrollView {
                             var picked = list[index - 1]
                             page.host.setPending("barProvider", picked.id || "")
                         }
+                    }
+                }
+
+                QQC2.Label {
+                    text: "Windows shown in the header text"
+                    opacity: 0.8
+                    font.pointSize: page.ui ? page.ui.smallFontSize : 9
+                    color: page.ui ? page.ui.textColor : "#f5f5f7"
+                }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: page.ui ? page.ui.largeSpacing : 8
+
+                    QQC2.CheckBox {
+                        text: "Session (5h)"
+                        checked: page.host ? page.host.curr("barSession", page.settings.barSession !== false) : true
+                        onToggled: page.host.setPending("barSession", checked)
+                    }
+
+                    QQC2.CheckBox {
+                        text: "Weekly"
+                        checked: page.host ? page.host.curr("barWeekly", page.settings.barWeekly !== false) : true
+                        onToggled: page.host.setPending("barWeekly", checked)
+                    }
+
+                    QQC2.CheckBox {
+                        text: "Monthly"
+                        checked: page.host ? page.host.curr("barMonthly", page.settings.barMonthly !== false) : true
+                        onToggled: page.host.setPending("barMonthly", checked)
                     }
                 }
 

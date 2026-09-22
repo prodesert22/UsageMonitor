@@ -8,6 +8,25 @@ notes live in [`releases/`](releases/).
 ## [0.8.1]
 
 ### Added
+- `usage-monitor-cli gemini login` — browser-based Gemini OAuth login (PKCE)
+  that writes `~/.gemini/oauth_creds.json`, plus `gemini status` and
+  `gemini logout`.
+- **Pin provider to panel bar (KDE) / popup header (Waybar)**: the settings
+  now list one entry per account — a lone login keeps the provider name
+  (`codex`); several accounts show `provider/account` (`codex/work`). A
+  provider-level pin keeps working as before. The pin dropdown is disabled
+  while "Show bar text" is off.
+- **Session/Weekly/Monthly window checkboxes** in the General settings page
+  (both KDE and Waybar): pick which usage windows compose the bar/header
+  text. Named extra rate limits (Codex `additional_rate_limits`, extra
+  opencode-go workspaces) are matched to their own slot by id and no longer
+  masquerade as Monthly; any remainder shows up in the tooltip.
+- `usage-monitor-cli widget kde` — quick-waybar smoke test command: the
+  `kde` subcommand now tests pin resolution and cache, outputting the
+  summary and pinned percent for each test.
+- Parse-error output now suggests the exact `git commit` command when `.go`
+  or `.json` changes are detected on-disk but the helper was compiled
+  without them.
 - **Waybar popup**: the KDE Plasma widget's QML interface, ported to plain Qt
   Quick and opened from the module's `on-click`
   (`usage-monitor-waybar-popup`, installed alongside the bar wrapper by
@@ -31,6 +50,10 @@ notes live in [`releases/`](releases/).
   `--once`, `--no-single-instance`, `--settings`, `--quit`, `--doctor`.
 
 ### Fixed
+- **Codex additional rate limits no longer masquerade as Monthly.** Extra
+  rate windows (Codex `additional_rate_limits`, opencode-go extra workspaces)
+  are now matched to their slot by window id; unnamed remainders show in
+  the tooltip as "additional" instead of filling the Monthly bar.
 - **Bar dropped to "⚠" on any failed fetch.** The module piped a single
   `usage-monitor-cli widget waybar` call straight out, so one rate-limited or
   expired-credential round replaced the percentage with the warning glyph. It

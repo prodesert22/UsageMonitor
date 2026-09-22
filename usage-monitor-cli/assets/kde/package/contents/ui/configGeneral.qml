@@ -50,6 +50,8 @@ KCM.SimpleKCM {
                 s[k] = parseInt(v)
             else if (k === "barProvider")
                 s["pinnedProvider"] = v
+            else if (k === "barSession" || k === "barWeekly" || k === "barMonthly")
+                s[k] = (v === true || v === "true")
         }
         backend.settings = s
         page.pending = ({})
@@ -104,26 +106,6 @@ KCM.SimpleKCM {
                 spacing: 0
 
                 PlasmaComponents3.Label {
-                    text: "Show bar text"
-                    opacity: 0.8
-                    font.pointSize: Kirigami.Theme.smallFont.pointSize
-                }
-
-                QQC2.Switch {
-                    id: showBarTextSwitch
-                    checked: page.curr("showBarText", backend.settings.showBarText !== false)
-                    onToggled: page.setPending("showBarText", checked)
-
-                    QQC2.ToolTip.visible: showBarTextSwitch.hovered
-                    QQC2.ToolTip.text: "Show usage percentage next to the icon in the panel bar."
-                    QQC2.ToolTip.delay: 500
-                }
-            }
-
-            ColumnLayout {
-                spacing: 0
-
-                PlasmaComponents3.Label {
                     text: "Show account email"
                     opacity: 0.8
                     font.pointSize: Kirigami.Theme.smallFont.pointSize
@@ -168,13 +150,35 @@ KCM.SimpleKCM {
             opacity: 0.18
         }
 
-        RowLayout {
+        QQC2.GroupBox {
             Layout.fillWidth: true
-            spacing: Kirigami.Units.largeSpacing
+            title: "Panel bar text"
+            background: Rectangle { color: "transparent" }
 
             ColumnLayout {
-                Layout.fillWidth: true
-                spacing: 0
+                width: parent.width
+                spacing: Kirigami.Units.smallSpacing
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.largeSpacing
+
+                    PlasmaComponents3.Label {
+                        text: "Show bar text"
+                        opacity: 0.8
+                        font.pointSize: Kirigami.Theme.smallFont.pointSize
+                    }
+
+                    QQC2.Switch {
+                        id: showBarTextSwitch
+                        checked: page.curr("showBarText", backend.settings.showBarText !== false)
+                        onToggled: page.setPending("showBarText", checked)
+
+                        QQC2.ToolTip.visible: showBarTextSwitch.hovered
+                        QQC2.ToolTip.text: "Show usage percentage next to the icon in the panel bar."
+                        QQC2.ToolTip.delay: 500
+                    }
+                }
 
                 PlasmaComponents3.Label {
                     text: "Pin to panel bar"
@@ -184,6 +188,7 @@ KCM.SimpleKCM {
 
                 QQC2.ComboBox {
                     Layout.fillWidth: true
+                    enabled: page.curr("showBarText", backend.settings.showBarText !== false)
                     model: ["— none —"].concat((backend.settings.pinnableProviders || []).map(function(p) { return p.displayName || p.id }))
                     currentIndex: {
                         var pinned = page.curr("barProvider", backend.settings.pinnedProvider || "")
@@ -204,21 +209,53 @@ KCM.SimpleKCM {
                         }
                     }
                 }
-            }
 
-            ColumnLayout {
-                Layout.alignment: Qt.AlignBottom
-
-                QQC2.ToolButton {
-                    text: "Clear Cache"
-                    icon.name: "edit-clear-history"
-                    display: QQC2.AbstractButton.TextBesideIcon
-                    onClicked: backend.cacheClear()
-
-                    QQC2.ToolTip.visible: hovered
-                    QQC2.ToolTip.text: "Clears the widget's last-good cache. Refresh after clearing."
-                    QQC2.ToolTip.delay: 500
+                PlasmaComponents3.Label {
+                    text: "Windows shown in the bar text"
+                    opacity: 0.8
+                    font.pointSize: Kirigami.Theme.smallFont.pointSize
                 }
+
+                RowLayout {
+                    Layout.fillWidth: true
+                    spacing: Kirigami.Units.largeSpacing
+                    enabled: page.curr("showBarText", backend.settings.showBarText !== false)
+
+                    QQC2.CheckBox {
+                        text: "Session (5h)"
+                        checked: page.curr("barSession", backend.settings.barSession !== false)
+                        onToggled: page.setPending("barSession", checked)
+                    }
+
+                    QQC2.CheckBox {
+                        text: "Weekly"
+                        checked: page.curr("barWeekly", backend.settings.barWeekly !== false)
+                        onToggled: page.setPending("barWeekly", checked)
+                    }
+
+                    QQC2.CheckBox {
+                        text: "Monthly"
+                        checked: page.curr("barMonthly", backend.settings.barMonthly !== false)
+                        onToggled: page.setPending("barMonthly", checked)
+                    }
+                }
+            }
+        }
+
+        RowLayout {
+            Layout.fillWidth: true
+            spacing: Kirigami.Units.largeSpacing
+            Layout.alignment: Qt.AlignRight
+
+            QQC2.ToolButton {
+                text: "Clear Cache"
+                icon.name: "edit-clear-history"
+                display: QQC2.AbstractButton.TextBesideIcon
+                onClicked: backend.cacheClear()
+
+                QQC2.ToolTip.visible: hovered
+                QQC2.ToolTip.text: "Clears the widget's last-good cache. Refresh after clearing."
+                QQC2.ToolTip.delay: 500
             }
         }
 

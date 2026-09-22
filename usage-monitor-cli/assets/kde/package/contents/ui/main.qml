@@ -214,6 +214,11 @@ PlasmoidItem {
     }
 
     function compactLabelPct() {
+        // The helper precomputes the pinned headline over the enabled bar
+        // windows; fall back to the local match for older cached payloads.
+        if (root.summary.pinnedPercent !== undefined && root.summary.pinnedPercent !== null) {
+            return root.summary.pinnedPercent
+        }
         var pinned = root.summary.barProvider || ""
         if (pinned) {
             var providers = root.summary.providers || []

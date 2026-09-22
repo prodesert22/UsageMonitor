@@ -115,7 +115,15 @@ workspaces and clear cache are immediate actions.
 provider name (`codex`); with several accounts each one appears as
 `provider/account` (`codex/work`), while the bare provider name keeps
 showing the default login. Previously stored provider-level pins keep
-working unchanged.
+working unchanged. The pin dropdown is disabled while **Show bar text** is
+off, since there is no bar text to drive.
+
+**Windows shown in the bar text** (Session / Weekly / Monthly checkboxes in
+the same section) picks which usage windows compose the bar text and the
+pinned headline. This also fixes providers that report extra windows: named
+extra rate limits (Codex `additional_rate_limits`, extra opencode-go
+workspaces) no longer masquerade as Monthly — they are matched to their own
+slot by id and any remainder shows up in the tooltip instead.
 
 Because those settings bypass KConfig, the applet gets no change signal from
 them. `main.xml` therefore carries one entry, `stateRevision`: once the helper

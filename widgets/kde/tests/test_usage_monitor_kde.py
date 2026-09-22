@@ -231,6 +231,86 @@ class PinAccountTests(unittest.TestCase):
         self.assertEqual(um.summarize(entries, pinned_provider="codex/plus2")["text"], "5%")
 
 
+class BarWindowTests(unittest.TestCase):
+    def test_extra_windows_do_not_fill_monthly_slot(self):
+        payload = {"providers": [
+            {"provider_id": "codex", "display_name": "Codex",
+             "windows": [
+                 {"id": "primary", "percentage": 10.0},
+                 {"id": "secondary", "percentage": 98.0},
+                 {"id": "Additional", "label": "Additional", "percentage": 0.0},
+             ]},
+        ]}
+        entries = um.fetch_entries(runner=lambda args: proc(json.dumps(payload)))
+        self.assertNotIn("tertiary", entries[0]["usage"])
+        self.assertEqual(len(entries[0]["usage"]["extra"]), 1)
+        summary = um.summarize(entries, pinned_provider="codex")
+        self.assertEqual(summary["text"], "10% • 98%")
+        self.assertIn("Codex additional: 0%", summary["tooltip"])
+        self.assertEqual(summary["pinnedPercent"], 98.0)
+
+    def test_unnamed_windows_keep_positional_fallback(self):
+        payload = {"providers": [
+            {"provider_id": "mystery", "windows": [{"percentage": 33.0}]},
+        ]}
+        entries = um.fetch_entries(runner=lambda args: proc(json.dumps(payload)))
+        self.assertEqual(entries[0]["usage"]["primary"]["usedPercent"], 33.0)
+
+    def test_bar_text_respects_enabled_windows(self):
+        entries = [
+            {"provider": "kimi", "account": "",
+             "usage": {"primary": {"usedPercent": 28.0},
+                       "secondary": {"usedPercent": 46.0},
+                       "tertiary": {"usedPercent": 31.0}}},
+        ]
+        self.assertEqual(
+            um.bar_text(entries, pinned_provider="kimi", windows=["primary", "secondary"]),
+            "28% • 46%",
+        )
+        self.assertEqual(um.bar_text(entries, pinned_provider="kimi", windows=["tertiary"]), "31%")
+        self.assertEqual(
+            um.pinned_percent(entries, pinned_provider="kimi", windows=["tertiary"]), 31.0
+        )
+        self.assertIsNone(um.pinned_percent(entries, pinned_provider=""))
+
+    def test_enabled_bar_windows_reads_state(self):
+        self.assertEqual(um.enabled_bar_windows({}), ["primary", "secondary", "tertiary"])
+        self.assertEqual(um.enabled_bar_windows({"barWeekly": "false"}), ["primary", "tertiary"])
+
+    def test_summarize_respects_bar_windows(self):
+        entries = [
+            {"provider": "kimi", "account": "",
+             "usage": {"primary": {"usedPercent": 28.0},
+                       "secondary": {"usedPercent": 46.0},
+                       "tertiary": {"usedPercent": 31.0}}},
+        ]
+        summary = um.summarize(entries, pinned_provider="kimi", bar_windows=["tertiary"])
+        self.assertEqual(summary["text"], "31%")
+        self.assertEqual(summary["pinnedPercent"], 31.0)
+
+    def test_merge_with_cache_keeps_two_accounts_separate(self):
+        with tempfile.TemporaryDirectory() as td:
+            cache = Path(td) / "last.json"
+            good = [
+                {"provider": "codex", "account": "",
+                 "usage": {"primary": {"usedPercent": 10.0}}},
+                {"provider": "codex", "account": "plus2",
+                 "usage": {"primary": {"usedPercent": 5.0}}},
+            ]
+            um.merge_with_cache(good, ["codex", "codex/plus2"], cache)
+            self.assertEqual(len(json.loads(cache.read_text())), 2)
+            failed = [
+                {"provider": "codex", "account": "", "error": {"message": "nope"}},
+                {"provider": "codex", "account": "plus2", "error": {"message": "nope"}},
+            ]
+            merged = um.merge_with_cache(failed, ["codex", "codex/plus2"], cache)
+            self.assertEqual(len(merged), 2)
+            self.assertTrue(all(m.get("stale") for m in merged))
+            by_account = {m["account"]: m for m in merged}
+            self.assertEqual(by_account[""]["usage"]["primary"]["usedPercent"], 10.0)
+            self.assertEqual(by_account["plus2"]["usage"]["primary"]["usedPercent"], 5.0)
+
+
 class DecimalsTests(unittest.TestCase):
     DECIMAL_PAYLOAD: ClassVar[dict] = {"providers": [
         {"provider_id": "kimi", "display_name": "Kimi",
@@ -346,6 +426,19 @@ class SettingsTests(unittest.TestCase):
             self.assertTrue(um.settings_payload()["showDecimals"])
             um._write_state({"showDecimals": "false"})
             self.assertFalse(um.settings_payload()["showDecimals"])
+
+    def test_settings_payload_exposes_bar_window_toggles(self):
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True), \
+             mock.patch.object(um, "cli_output", side_effect=self.fake_output), \
+             mock.patch.object(um, "cli_version", return_value="0.6.0"), \
+             mock.patch.object(um, "installed_schemes", return_value=[]):
+            self.assertTrue(um.settings_payload()["barWeekly"])
+            um._write_state({"barWeekly": "false"})
+            payload = um.settings_payload()
+            self.assertFalse(payload["barWeekly"])
+            self.assertTrue(payload["barSession"])
+            self.assertTrue(payload["barMonthly"])
 
     def test_settings_payload_pinnable_lists_each_active_account(self):
         shows = dict(self.SHOWS)
