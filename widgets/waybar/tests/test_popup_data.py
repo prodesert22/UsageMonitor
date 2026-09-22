@@ -224,6 +224,41 @@ class FetchTests(unittest.TestCase):
         ]
         self.assertEqual(data.summarize(entries, "codex")["text"], "20% • 30%")
 
+    def test_pinned_account_drives_the_summary_text(self):
+        entries = [
+            {"provider": "codex", "account": "",
+             "usage": {"primary": {"usedPercent": 10.0}, "secondary": {"usedPercent": 98.0}}},
+            {"provider": "codex", "account": "plus2",
+             "usage": {"primary": {"usedPercent": 0.0}, "secondary": {"usedPercent": 5.0}}},
+        ]
+        self.assertEqual(data.summarize(entries, "codex/plus2")["text"], "0% • 5%")
+        # Legacy provider-level pin still resolves to the implicit default.
+        self.assertEqual(data.summarize(entries, "codex")["text"], "10% • 98%")
+        # Unknown account falls back to the max across providers.
+        self.assertEqual(data.summarize(entries, "codex/ghost")["text"], "98%")
+
+    def test_pin_key_for_entry(self):
+        self.assertEqual(data.pin_key_for_entry({"provider": "codex", "account": ""}), "codex")
+        self.assertEqual(data.pin_key_for_entry({"provider": "codex"}), "codex")
+        self.assertEqual(data.pin_key_for_entry({"provider": "codex", "account": "plus2"}), "codex/plus2")
+
+    def test_pinnable_targets_lists_each_active_account(self):
+        accounts = [
+            {"id": "default", "label": "(auto-detected)", "active": "true"},
+            {"id": "plus2", "label": "Plus 2", "active": "true"},
+            {"id": "old", "label": "Old", "active": "false"},
+        ]
+        targets = data.pinnable_targets("codex", "Codex", accounts)
+        self.assertEqual([t["id"] for t in targets], ["codex", "codex/plus2"])
+        self.assertEqual(targets[1]["displayName"], "Codex — Plus 2")
+
+    def test_pinnable_targets_lone_login_stays_provider_level(self):
+        accounts = [{"id": "default", "label": "(auto-detected)", "active": "true"}]
+        self.assertEqual(
+            data.pinnable_targets("codex", "Codex", accounts),
+            [{"id": "codex", "displayName": "Codex"}],
+        )
+
     def test_merge_with_cache_marks_failed_providers_stale(self):
         with tempfile.TemporaryDirectory() as td:
             cache = Path(td) / "last.json"

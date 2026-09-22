@@ -206,13 +206,28 @@ PlasmoidItem {
         return result
     }
 
+    function pinKey(entry) {
+        // Mirrors pin_key_for_entry in usage_monitor_kde.py: `provider` for
+        // the implicit default login, `provider/account` for named accounts.
+        if (entry && entry.account) return entry.provider + "/" + entry.account
+        return entry ? entry.provider : ""
+    }
+
     function compactLabelPct() {
         var pinned = root.summary.barProvider || ""
         if (pinned) {
             var providers = root.summary.providers || []
             for (var i = 0; i < providers.length; i++) {
-                if (providers[i].provider === pinned) {
+                if (pinKey(providers[i]) === pinned) {
                     return providers[i].maxPercent || 0
+                }
+            }
+            // Legacy provider-level pin: first entry of that provider.
+            if (pinned.indexOf("/") === -1) {
+                for (var j = 0; j < providers.length; j++) {
+                    if (providers[j].provider === pinned) {
+                        return providers[j].maxPercent || 0
+                    }
                 }
             }
         }

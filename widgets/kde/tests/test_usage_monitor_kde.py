@@ -181,6 +181,56 @@ class SummaryTests(unittest.TestCase):
             self.assertEqual(payload["providers"][0]["provider"], "claude")
 
 
+class PinAccountTests(unittest.TestCase):
+    ENTRIES: ClassVar[list] = [
+        {"provider": "codex", "account": "",
+         "usage": {"primary": {"usedPercent": 10.0}, "secondary": {"usedPercent": 98.0}}},
+        {"provider": "codex", "account": "plus2",
+         "usage": {"primary": {"usedPercent": 0.0}, "secondary": {"usedPercent": 5.0}}},
+    ]
+
+    def test_pin_key_for_entry(self):
+        self.assertEqual(um.pin_key_for_entry({"provider": "codex", "account": ""}), "codex")
+        self.assertEqual(um.pin_key_for_entry({"provider": "codex"}), "codex")
+        self.assertEqual(um.pin_key_for_entry({"provider": "codex", "account": "plus2"}), "codex/plus2")
+
+    def test_bar_text_pins_specific_account(self):
+        self.assertEqual(um.bar_text(self.ENTRIES, pinned_provider="codex/plus2"), "0% • 5%")
+
+    def test_bar_text_bare_provider_keeps_legacy_match(self):
+        # A stored provider-level pin still resolves (implicit default entry).
+        self.assertEqual(um.bar_text(self.ENTRIES, pinned_provider="codex"), "10% • 98%")
+
+    def test_bar_text_unknown_account_falls_back_to_max(self):
+        self.assertEqual(um.bar_text(self.ENTRIES, pinned_provider="codex/ghost"), "98%")
+
+    def test_pinnable_targets_lists_each_active_account(self):
+        accounts = [
+            {"id": "default", "label": "(auto-detected)", "active": "true"},
+            {"id": "plus2", "label": "Plus 2", "active": "true"},
+            {"id": "old", "label": "Old", "active": "false"},
+        ]
+        targets = um.pinnable_targets("codex", "Codex", accounts)
+        self.assertEqual([t["id"] for t in targets], ["codex", "codex/plus2"])
+        self.assertEqual(targets[1]["displayName"], "Codex — Plus 2")
+
+    def test_pinnable_targets_lone_login_stays_provider_level(self):
+        accounts = [{"id": "default", "label": "(auto-detected)", "active": "true"}]
+        self.assertEqual(
+            um.pinnable_targets("codex", "Codex", accounts),
+            [{"id": "codex", "displayName": "Codex"}],
+        )
+
+    def test_fetch_entries_carries_account_id(self):
+        payload = {"providers": [
+            {"provider_id": "codex", "display_name": "Codex", "account_id": "plus2",
+             "windows": [{"percentage": 5.0}]},
+        ]}
+        entries = um.fetch_entries(runner=lambda args: proc(json.dumps(payload)))
+        self.assertEqual(entries[0]["account"], "plus2")
+        self.assertEqual(um.summarize(entries, pinned_provider="codex/plus2")["text"], "5%")
+
+
 class DecimalsTests(unittest.TestCase):
     DECIMAL_PAYLOAD: ClassVar[dict] = {"providers": [
         {"provider_id": "kimi", "display_name": "Kimi",
@@ -296,6 +346,27 @@ class SettingsTests(unittest.TestCase):
             self.assertTrue(um.settings_payload()["showDecimals"])
             um._write_state({"showDecimals": "false"})
             self.assertFalse(um.settings_payload()["showDecimals"])
+
+    def test_settings_payload_pinnable_lists_each_active_account(self):
+        shows = dict(self.SHOWS)
+        shows[("codex", "show")] = (
+            "provider = codex\nstate = enabled\n[default] (auto-detected)\n[plus2] Plus 2\n"
+        )
+
+        def fake(args):
+            if tuple(args) == ("list",):
+                return self.LIST_OUT
+            return shows.get(tuple(args), "")
+
+        with tempfile.TemporaryDirectory() as td, \
+             mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True), \
+             mock.patch.object(um, "cli_output", side_effect=fake), \
+             mock.patch.object(um, "cli_version", return_value="0.6.0"):
+            payload = um.settings_payload()
+            self.assertEqual(
+                [p["id"] for p in payload["pinnableProviders"]],
+                ["codex", "codex/plus2"],
+            )
 
     def test_settings_payload_carries_the_theme(self):
         with tempfile.TemporaryDirectory() as td, mock.patch.dict(os.environ, {"XDG_CONFIG_HOME": td}, clear=True):

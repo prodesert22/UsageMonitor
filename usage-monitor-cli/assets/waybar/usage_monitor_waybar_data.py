@@ -986,6 +986,9 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
     entry: dict[str, Any] = {
         "provider": provider_id,
         "displayName": str(item.get("display_name") or provider_name(provider_id)),
+        # Explicit account id ("" for the implicit auto-detected default), so
+        # the bar can pin one account of a multi-account provider.
+        "account": str(item.get("account_id") or ""),
         "usage": usage,
     }
     if item.get("error"):
@@ -1134,8 +1137,21 @@ def tooltip_lines(entries: list[dict[str, Any]]) -> list[str]:
     return lines
 
 
+def pin_key_for_entry(entry: dict[str, Any]) -> str:
+    """Pin key of a usage entry: `provider` for the implicit default login,
+    `provider/account` for a named account (e.g. `codex/work`)."""
+    provider = str(entry.get("provider") or "")
+    account = str(entry.get("account") or "")
+    return f"{provider}/{account}" if account else provider
+
+
 def bar_text(entries: list[dict[str, Any]], pinned_provider: str = "") -> str:
-    pinned = next((entry for entry in entries if pinned_provider and entry.get("provider") == pinned_provider), None)
+    pinned = None
+    if pinned_provider:
+        pinned = next((entry for entry in entries if pin_key_for_entry(entry) == pinned_provider), None)
+        if pinned is None and "/" not in pinned_provider:
+            # Legacy provider-level pin: first entry of that provider.
+            pinned = next((entry for entry in entries if entry.get("provider") == pinned_provider), None)
     if pinned and not pinned.get("error"):
         values = [window_percent(pinned, key) for key in WINDOW_LABELS]
         values = [value for value in values if value is not None]
@@ -1279,6 +1295,38 @@ def list_workspaces(account: str | None = None) -> list[dict[str, str]]:
     return workspaces
 
 
+def _is_implicit_default(account: dict[str, Any]) -> bool:
+    return account.get("id") == "default" and "auto-detected" in str(account.get("label") or "")
+
+
+def pinnable_targets(provider_id: str, display_name: str, accounts: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Pin targets for the bar: one per active account.
+
+    A lone auto-detected login keeps the legacy provider-level id (`codex`);
+    otherwise each account gets `provider/account`, with the implicit default
+    keeping the bare provider id for backward compatibility.
+    """
+    active = [a for a in accounts if isinstance(a, dict) and a.get("active") != "false"]
+    named = [a for a in active if not _is_implicit_default(a)]
+    if not named:
+        return [{"id": provider_id, "displayName": display_name}]
+    targets = []
+    for account in active:
+        if _is_implicit_default(account):
+            targets.append({"id": provider_id, "displayName": display_name})
+        else:
+            label = str(account.get("label") or account.get("id") or "")
+            targets.append(
+                {
+                    "id": f"{provider_id}/{account.get('id')}",
+                    "displayName": f"{display_name} — {label}",
+                    "providerId": provider_id,
+                    "accountId": account.get("id"),
+                }
+            )
+    return targets
+
+
 def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
     sf = state_full(state_path)
     items = [item for item in parse_list() if item.get("id")]
@@ -1321,9 +1369,12 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
             entry["workspaces"] = workspaces
         providers.append(entry)
     pinnable = [
-        {"id": p["id"], "displayName": p["displayName"]}
+        target
         for p in providers
         if p["enabled"]
+        for target in pinnable_targets(
+            p["id"], p["displayName"], accounts_by.get(p["id"], [])
+        )
     ]
     return {
         "providers": providers,

@@ -111,6 +111,12 @@ pin), Order (drag
 reorder) and Theme are **Apply-driven**; provider enable/disable, accounts,
 workspaces and clear cache are immediate actions.
 
+**Pin to panel bar** lists one entry per account: a lone login keeps the
+provider name (`codex`); with several accounts each one appears as
+`provider/account` (`codex/work`), while the bare provider name keeps
+showing the default login. Previously stored provider-level pins keep
+working unchanged.
+
 Because those settings bypass KConfig, the applet gets no change signal from
 them. `main.xml` therefore carries one entry, `stateRevision`: once the helper
 has finished writing `state.json`, `SettingsBackend.notifyApplet()` bumps it, and
