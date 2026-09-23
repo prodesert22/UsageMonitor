@@ -280,70 +280,19 @@ fn test_help_flag_never_creates_account() {
 }
 
 #[test]
-fn test_workspace_add_remove_list() {
-    let env = TestEnv::new("workspace");
-    let out = env.run(&["opencode-go", "workspace", "add", "wrk_first"]);
-    assert!(out.status.success(), "stderr: {}", stderr(&out));
-    let out = env.run(&["opencode-go", "workspace", "add", "wrk_first"]);
-    assert!(!out.status.success());
-    assert!(stderr(&out).contains("already configured"));
-
-    // URL form is accepted and normalized.
-    let out = env.run(&[
-        "opencode-go",
-        "workspace",
-        "add",
-        "https://opencode.ai/workspace/wrk_second/go",
-    ]);
-    assert!(
-        stdout(&out).contains("wrk_first, wrk_second"),
-        "got: {}",
-        stdout(&out)
-    );
-
-    // Persisted as a real TOML array (pretty serializer emits it multi-line).
-    let raw = std::fs::read_to_string(env.config_path()).unwrap();
-    assert!(raw.contains("workspaces = ["), "got: {}", raw);
-    assert!(raw.contains(r#""wrk_first""#), "got: {}", raw);
-    assert!(raw.contains(r#""wrk_second""#), "got: {}", raw);
-
-    let out = env.run(&["opencode-go", "workspace", "list"]);
-    assert_eq!(stdout(&out).trim(), "wrk_first\nwrk_second");
-
-    env.run(&["opencode-go", "workspace", "remove", "wrk_first"]);
-    let out = env.run(&["opencode-go", "workspace", "list"]);
-    assert_eq!(stdout(&out).trim(), "wrk_second");
-
-    env.run(&["opencode-go", "workspace", "remove", "wrk_second"]);
-    let out = env.run(&["opencode-go", "workspace", "list"]);
-    assert!(stdout(&out).contains("auto-discovery"));
-
-    let out = env.run(&["opencode-go", "workspace", "remove", "wrk_second"]);
-    assert!(!out.status.success());
-    assert!(stderr(&out).contains("not configured"));
-
-    // Optional display name persists as `id=Name` and shows in list.
-    env.run(&["opencode-go", "workspace", "add", "wrk_named", "Production"]);
-    let raw = std::fs::read_to_string(env.config_path()).unwrap();
-    assert!(raw.contains(r#""wrk_named=Production""#), "got: {}", raw);
-    let out = env.run(&["opencode-go", "workspace", "list"]);
-    assert!(stdout(&out).contains("wrk_named"), "got: {}", stdout(&out));
-    assert!(stdout(&out).contains("Production"), "got: {}", stdout(&out));
-    env.run(&["opencode-go", "workspace", "remove", "wrk_named"]);
-
-    // Invalid reference fails instead of silently wiping.
-    let out = env.run(&["opencode-go", "workspace", "add", "not-a-workspace"]);
-    assert!(!out.status.success());
-
-    let out = env.run(&[
-        "opencode-go",
-        "workspace",
-        "add",
-        "wrk_comma",
-        "Client, Production",
-    ]);
-    assert!(!out.status.success());
-    assert!(stderr(&out).contains("cannot contain comma"));
+fn test_workspace_commands_removed() {
+    // Workspace pinning was removed when the provider moved to the official
+    // Zen usage endpoint (one API key covers the whole account): the
+    // `workspace` subcommand no longer exists.
+    let env = TestEnv::new("workspace-removed");
+    for args in [
+        vec!["opencode-go", "workspace", "list"],
+        vec!["opencode-go", "workspace", "add", "wrk_first"],
+        vec!["opencode-go", "workspace", "remove", "wrk_first"],
+    ] {
+        let out = env.run(&args);
+        assert!(!out.status.success(), "args {:?} should fail", args);
+    }
 }
 
 #[test]
@@ -516,15 +465,16 @@ fn test_fetch_emits_one_block_per_account() {
 }
 
 #[test]
-fn test_workspace_scoped_to_account() {
-    let env = TestEnv::new("workspace-account");
+fn test_opencode_go_token_per_account() {
+    // The API key is per-account: each login holds its own `token`.
+    let env = TestEnv::new("opencode-go-accounts");
     let out = env.run(&[
         "opencode-go",
-        "workspace",
-        "add",
-        "wrk_prod",
-        "--account",
+        "account",
+        "set",
         "team",
+        "token",
+        "team-api-key-secret-value",
     ]);
     assert!(out.status.success(), "stderr: {}", stderr(&out));
 
@@ -534,13 +484,7 @@ fn test_workspace_scoped_to_account() {
         "got: {}",
         raw
     );
-
-    let out = env.run(&["opencode-go", "workspace", "list", "--account", "team"]);
-    assert_eq!(stdout(&out).trim(), "wrk_prod");
-
-    // Default account is independent.
-    let out = env.run(&["opencode-go", "workspace", "list"]);
-    assert!(stdout(&out).contains("auto-discovery"));
+    assert!(!stdout(&out).contains("team-api-key-secret-value"));
 }
 
 #[test]

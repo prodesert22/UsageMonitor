@@ -10,6 +10,7 @@ pub mod deepseek;
 pub mod devin;
 pub mod elevenlabs;
 pub mod gemini;
+pub mod gemini_oauth;
 pub mod grok;
 pub mod groq;
 pub mod kimi;

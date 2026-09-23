@@ -31,7 +31,7 @@ Clicking it opens the full popup, with one card per provider/account:
   - **Providers** — search + enable/disable toggles
     (`usage-monitor-cli enable|disable <provider>`) and **Manage accounts** per
     provider: add/remove named accounts with a form shaped per provider auth type
-    (see below), plus add/remove **workspaces** for opencode-go.
+    (see below).
   - **Order** — drag to reorder providers.
   - **Theme** — colors, fonts and metrics for the panel bar and the popup (see
     [Theming](#theming)).
@@ -111,8 +111,8 @@ same way the Plasma System Monitor does: each page declares
 `function saveConfig()` (called on Apply/OK → writes the pending values via the
 helper). General (refresh interval, bar text, account email, decimal places,
 pin), Order (drag
-reorder) and Theme are **Apply-driven**; provider enable/disable, accounts,
-workspaces and clear cache are immediate actions.
+reorder) and Theme are **Apply-driven**; provider enable/disable, accounts
+and clear cache are immediate actions.
 
 **Pin to panel bar** lists one entry per account: a lone login keeps the
 provider name (`codex`); with several accounts each one appears as
@@ -124,9 +124,9 @@ off, since there is no bar text to drive.
 **Windows shown in the bar text** (Session / Weekly / Monthly checkboxes in
 the same section) picks which usage windows compose the bar text and the
 pinned headline. This also fixes providers that report extra windows: named
-extra rate limits (Codex `additional_rate_limits`, extra opencode-go
-workspaces) no longer masquerade as Monthly — they are matched to their own
-slot by id and any remainder shows up in the tooltip instead.
+extra rate limits (e.g. Codex `additional_rate_limits`) no longer masquerade
+as Monthly — they are matched to their own slot by id and any remainder
+shows up in the tooltip instead.
 
 Because those settings bypass KConfig, the applet gets no change signal from
 them. `main.xml` therefore carries one entry, `stateRevision`: once the helper
@@ -221,10 +221,9 @@ provider authenticates:
 | Auth type | Providers | Add form |
 |-----------|-----------|----------|
 | **API key** | openai, anthropic, openrouter, groq, deepseek, kimik2, minimax, moonshot, venice, zai, elevenlabs, deepgram (+project id), llmproxy (+base url) | name + API key |
-| **Token** | grok, kimi, copilot, devin (+org), windsurf | name + token |
+| **Token** | grok, kimi, copilot, devin (+org), windsurf, opencode-go (API key) | name + token |
 | **Cookie** | abacus, mistral, ollama, cursor, perplexity | name + session cookie |
 | **OAuth / CLI** | codex, claude, gemini, antigravity | name + credentials path (login done in a terminal — see below) |
-| **opencode-go** | opencode-go | name + cookie, plus workspace add/remove |
 
 OAuth providers need a CLI login **before** pointing the widget at the
 credentials file. The form shows the exact commands; for example, a second Codex
@@ -256,8 +255,6 @@ python "$CODE" set-state --key themeBuiltin --value nord
 python "$CODE" set-provider --provider claude --enabled true
 python "$CODE" account-save --provider openai --name work --json '{"api_key":"sk-…"}'
 python "$CODE" account-remove --provider openai --name work
-python "$CODE" workspace-add --workspace wrk_… --name "My WS"
-python "$CODE" workspace-remove --workspace wrk_…
 ```
 
 ## Troubleshooting

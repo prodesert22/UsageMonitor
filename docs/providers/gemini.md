@@ -5,10 +5,19 @@ endpoints CodexBar uses, reusing the gemini-cli OAuth login.
 
 ## Auth
 
-Log in once with the gemini-cli (`gemini`) so credentials exist at
+Log in once with the built-in browser OAuth flow so credentials exist at
 `~/.gemini/oauth_creds.json`. Auto-enables when that file is present.
 
 ```bash
+# browser OAuth login (PKCE) — stores ~/.gemini/oauth_creds.json
+usage-monitor-cli gemini login
+
+# check credential status (masked token, expiry, path)
+usage-monitor-cli gemini status
+
+# remove stored credentials
+usage-monitor-cli gemini logout
+
 # default: read ~/.gemini/oauth_creds.json (refreshes when expired)
 usage-monitor-cli fetch gemini
 
@@ -53,4 +62,4 @@ usage-monitor-cli fetch gemini --account work
 
 Only the gemini-cli OAuth (personal) flow is supported — API-key and Vertex AI
 auth are out of scope for quota reads. If no `refresh_token` is stored and the
-access token has expired, re-run the gemini-cli login.
+access token has expired, re-run `usage-monitor-cli gemini login`.

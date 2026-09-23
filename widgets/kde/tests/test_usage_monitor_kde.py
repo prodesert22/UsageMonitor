@@ -802,7 +802,11 @@ class AuthMetadataTests(unittest.TestCase):
         self.assertEqual(um.provider_auth("grok")["kind"], "token")
         self.assertEqual(um.provider_auth("abacus")["kind"], "cookie")
         self.assertEqual(um.provider_auth("codex")["kind"], "oauth")
-        self.assertEqual(um.provider_auth("opencode-go")["kind"], "opencode")
+        self.assertEqual(um.provider_auth("opencode-go")["kind"], "token")
+        self.assertEqual(
+            [f["key"] for f in um.provider_auth("opencode-go")["fields"]],
+            ["token"],
+        )
         # Unknown providers default to an API-key form.
         self.assertEqual(um.provider_auth("brand-new")["kind"], "api_key")
 
@@ -810,12 +814,6 @@ class AuthMetadataTests(unittest.TestCase):
         codex = um.provider_auth("codex")
         self.assertTrue(codex["setupHint"])
         self.assertEqual([f["key"] for f in codex["fields"]], ["credentials_path"])
-
-    def test_list_workspaces_parses_lines(self):
-        out = "wrk_a   Alpha\nwrk_b\n(no workspaces configured)\n"
-        with mock.patch.object(um, "cli_output", return_value=out):
-            ws = um.list_workspaces()
-            self.assertEqual(ws, [{"id": "wrk_a", "name": "Alpha"}, {"id": "wrk_b", "name": ""}])
 
 
 class ManageCommandTests(unittest.TestCase):
@@ -833,16 +831,6 @@ class ManageCommandTests(unittest.TestCase):
         with mock.patch.object(um, "run_cli", return_value=proc()) as run:
             um.command_account_remove(SimpleNamespace(provider="openai", name="work"))
             self.assertEqual(run.call_args.args[0], ["openai", "account", "remove", "work"])
-
-    def test_workspace_add_with_name(self):
-        with mock.patch.object(um, "run_cli", return_value=proc()) as run:
-            um.command_workspace_add(SimpleNamespace(workspace="wrk_a", name="Alpha", account=""))
-            self.assertEqual(run.call_args.args[0], ["opencode-go", "workspace", "add", "wrk_a", "Alpha"])
-
-    def test_workspace_remove(self):
-        with mock.patch.object(um, "run_cli", return_value=proc()) as run:
-            um.command_workspace_remove(SimpleNamespace(workspace="wrk_a", account=""))
-            self.assertEqual(run.call_args.args[0], ["opencode-go", "workspace", "remove", "wrk_a"])
 
 
 class UpdateTests(unittest.TestCase):

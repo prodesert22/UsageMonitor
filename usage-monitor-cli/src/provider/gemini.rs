@@ -3,8 +3,9 @@
 //! Ports CodexBar's OAuth flow for the Linux CLI: it reads the gemini-cli OAuth
 //! credentials from `~/.gemini/oauth_creds.json` (or an explicit `access_token`
 //! in config), refreshes the access token when expired using the public
-//! gemini-cli OAuth client, then calls Code Assist's `loadCodeAssist` and
-//! `retrieveUserQuota` endpoints to read per-model daily quotas.
+//! gemini-cli OAuth client, then calls Code Assist's `loadCodeAssist`,
+//! `onboardUser` (when no managed project exists yet) and `retrieveUserQuota`
+//! endpoints to read per-model daily quotas.
 
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
@@ -14,12 +15,21 @@ use crate::model::{PlanInfo, RateWindow, UsageSnapshot};
 use crate::provider::{ProviderContext, ProviderMetadata, UsageProvider};
 
 /// Public gemini-cli OAuth client (shipped in the open-source `@google/gemini-cli`).
-const GEMINI_CLI_CLIENT_ID: &str =
+pub(crate) const GEMINI_CLI_CLIENT_ID: &str =
     "681255809395-oo8ft2oprdrnp9e3aqf6av3hmdib135j.apps.googleusercontent.com";
-const GEMINI_CLI_CLIENT_SECRET: &str = "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";
+pub(crate) const GEMINI_CLI_CLIENT_SECRET: &str = "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";
 
 const CLOUDCODE_BASE: &str = "https://cloudcode-pa.googleapis.com";
 const TOKEN_URL: &str = "https://oauth2.googleapis.com/token";
+
+/// gemini-cli version advertised in the Code Assist User-Agent (latest
+/// published at time of writing).
+const GEMINI_CLI_VERSION: &str = "0.57.0";
+const FREE_TIER_ID: &str = "free-tier";
+const LEGACY_TIER_ID: &str = "legacy-tier";
+/// Bounded polling of the onboardUser operation (mirrors the reference clone).
+const ONBOARD_POLL_ATTEMPTS: usize = 10;
+const ONBOARD_POLL_DELAY: std::time::Duration = std::time::Duration::from_secs(1);
 
 #[derive(Debug, serde::Deserialize)]
 struct QuotaResponse {
@@ -35,6 +45,87 @@ struct QuotaBucket {
     reset_time: Option<String>,
     #[serde(default, rename = "modelId")]
     model_id: Option<String>,
+}
+
+/// `loadCodeAssist` payload: the managed project (string or `{id}`) plus the
+/// user's current/eligible Code Assist tiers.
+#[derive(Debug, Default, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct LoadCodeAssist {
+    #[serde(default)]
+    cloudaicompanion_project: Option<serde_json::Value>,
+    #[serde(default)]
+    current_tier: Option<CurrentTier>,
+    #[serde(default)]
+    allowed_tiers: Vec<UserTier>,
+    #[serde(default)]
+    ineligible_tiers: Vec<IneligibleTier>,
+}
+
+impl LoadCodeAssist {
+    /// The managed project id, whether returned as a string or `{id}`.
+    fn managed_project_id(&self) -> Option<String> {
+        match &self.cloudaicompanion_project {
+            Some(serde_json::Value::String(s)) if !s.trim().is_empty() => {
+                Some(s.trim().to_string())
+            }
+            Some(serde_json::Value::Object(obj)) => obj
+                .get("id")
+                .or_else(|| obj.get("projectId"))
+                .and_then(|v| v.as_str())
+                .filter(|s| !s.trim().is_empty())
+                .map(|s| s.trim().to_string()),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct CurrentTier {
+    #[serde(default)]
+    id: Option<String>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct UserTier {
+    #[serde(default)]
+    id: Option<String>,
+    #[serde(default)]
+    is_default: Option<bool>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct IneligibleTier {
+    #[serde(default)]
+    reason_message: Option<String>,
+}
+
+/// `onboardUser` payload: an operation with a `done` flag and the resulting
+/// managed project.
+#[derive(Debug, serde::Deserialize)]
+struct OnboardUser {
+    #[serde(default)]
+    name: Option<String>,
+    #[serde(default)]
+    done: bool,
+    #[serde(default)]
+    response: Option<OnboardResponse>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct OnboardResponse {
+    #[serde(default)]
+    cloudaicompanion_project: Option<CloudProject>,
+}
+
+#[derive(Debug, serde::Deserialize)]
+struct CloudProject {
+    #[serde(default)]
+    id: Option<String>,
 }
 
 /// One model's resolved daily quota.
@@ -127,8 +218,88 @@ impl GeminiProvider {
     fn build_client(ctx: &ProviderContext) -> Result<reqwest::Client, SpendPanelError> {
         reqwest::Client::builder()
             .timeout(std::time::Duration::from_secs(ctx.timeout_secs))
+            .user_agent(Self::build_user_agent())
             .build()
             .map_err(|e| SpendPanelError::NetworkError(e.to_string()))
+    }
+
+    /// gemini-cli style User-Agent so the Code Assist backend fingerprints us
+    /// as CLI traffic.
+    fn build_user_agent() -> String {
+        format!(
+            "GeminiCLI/{GEMINI_CLI_VERSION}/gemini-code-assist (linux; {}; terminal)",
+            std::env::consts::ARCH
+        )
+    }
+
+    /// Short random lowercase-alphanumeric activity id (mirrors the clone's
+    /// base36 request id).
+    fn activity_request_id() -> String {
+        Self::random_alphanumeric(8)
+    }
+
+    fn random_alphanumeric(len: usize) -> String {
+        const ALPHABET: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";
+        let mut bytes = [0u8; 32];
+        getrandom::getrandom(&mut bytes).expect("OS randomness unavailable");
+        bytes
+            .iter()
+            .take(len)
+            .map(|b| ALPHABET[*b as usize % ALPHABET.len()] as char)
+            .collect()
+    }
+
+    /// Common headers for every Code Assist API call.
+    fn apply_code_assist_headers(
+        req: reqwest::RequestBuilder,
+        access_token: &str,
+    ) -> reqwest::RequestBuilder {
+        req.header("Authorization", format!("Bearer {access_token}"))
+            .header("Content-Type", "application/json")
+            .header("User-Agent", Self::build_user_agent())
+            .header("x-activity-request-id", Self::activity_request_id())
+    }
+
+    /// Code Assist metadata payload required for product provisioning.
+    fn code_assist_metadata() -> serde_json::Value {
+        serde_json::json!({
+            "ideType": "IDE_UNSPECIFIED",
+            "platform": "PLATFORM_UNSPECIFIED",
+            "pluginType": "GEMINI",
+        })
+    }
+
+    /// Default onboarding tier when the backend lists no allowed tiers.
+    fn pick_onboard_tier(allowed_tiers: &[UserTier]) -> String {
+        allowed_tiers
+            .iter()
+            .find(|tier| tier.is_default.unwrap_or(false))
+            .and_then(|tier| tier.id.clone())
+            .or_else(|| allowed_tiers.first().and_then(|tier| tier.id.clone()))
+            .unwrap_or_else(|| LEGACY_TIER_ID.to_string())
+    }
+
+    /// Concise message from ineligible-tier reasons, if any.
+    fn ineligible_message(tiers: &[IneligibleTier]) -> Option<String> {
+        let reasons: Vec<&str> = tiers
+            .iter()
+            .filter_map(|tier| tier.reason_message.as_deref())
+            .filter(|message| !message.trim().is_empty())
+            .collect();
+        if reasons.is_empty() {
+            None
+        } else {
+            Some(reasons.join(", "))
+        }
+    }
+
+    fn project_required_error() -> SpendPanelError {
+        SpendPanelError::ProviderError(
+            "gemini".into(),
+            "Gemini Code Assist requires a Google Cloud project. Configure one with \
+             `usage-monitor-cli gemini set project <project-id>` and retry."
+                .into(),
+        )
     }
 
     /// Resolves a usable access token: explicit config token, or the creds file
@@ -218,40 +389,170 @@ impl GeminiProvider {
         Ok(parsed.access_token)
     }
 
-    /// Loads the Code Assist project id (best-effort; `None` on any failure).
-    async fn load_project_id(
+    /// Loads the Code Assist account state (best-effort; `None` on any
+    /// failure, mirroring the clone's `loadManagedProject`).
+    async fn load_code_assist(
         &self,
         client: &reqwest::Client,
         access_token: &str,
-    ) -> Option<String> {
+        configured_project: Option<&str>,
+    ) -> Option<LoadCodeAssist> {
         let url = format!(
             "{}/v1internal:loadCodeAssist",
             self.cloudcode_base().trim_end_matches('/')
         );
-        let resp = client
-            .post(url)
-            .header("Authorization", format!("Bearer {}", access_token))
-            .header("Content-Type", "application/json")
-            .body(r#"{"metadata":{"ideType":"GEMINI_CLI","pluginType":"GEMINI"}}"#)
+        let mut body = serde_json::Map::new();
+        body.insert("metadata".into(), Self::code_assist_metadata());
+        if let Some(project) = configured_project.filter(|p| !p.is_empty()) {
+            body.insert(
+                "cloudaicompanionProject".into(),
+                serde_json::Value::String(project.to_string()),
+            );
+        }
+        let resp = Self::apply_code_assist_headers(client.post(url), access_token)
+            .body(serde_json::Value::Object(body).to_string())
             .send()
             .await
             .ok()?;
         if !resp.status().is_success() {
             return None;
         }
-        let json: serde_json::Value = resp.json().await.ok()?;
-        let project = json.get("cloudaicompanionProject");
-        match project {
-            Some(serde_json::Value::String(s)) if !s.trim().is_empty() => {
-                Some(s.trim().to_string())
+        resp.json().await.ok()
+    }
+
+    /// Onboards the user onto a Code Assist tier, polling the returned
+    /// operation until it completes. Returns the managed project id, or the
+    /// configured project as a fallback.
+    async fn onboard_user(
+        &self,
+        client: &reqwest::Client,
+        access_token: &str,
+        tier_id: &str,
+        configured_project: Option<&str>,
+    ) -> Result<Option<String>, SpendPanelError> {
+        let base = format!("{}/v1internal", self.cloudcode_base().trim_end_matches('/'));
+        let mut body = serde_json::Map::new();
+        body.insert("tierId".into(), serde_json::Value::String(tier_id.into()));
+        body.insert("metadata".into(), Self::code_assist_metadata());
+        if let Some(project) = configured_project.filter(|p| !p.is_empty()) {
+            body.insert(
+                "cloudaicompanionProject".into(),
+                serde_json::Value::String(project.to_string()),
+            );
+        }
+        let resp = Self::apply_code_assist_headers(
+            client.post(format!("{base}:onboardUser")),
+            access_token,
+        )
+        .body(serde_json::Value::Object(body).to_string())
+        .send()
+        .await
+        .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+        if !resp.status().is_success() {
+            return Ok(None);
+        }
+        let mut payload: OnboardUser = resp
+            .json()
+            .await
+            .map_err(|e| SpendPanelError::ParseError("gemini".into(), e.to_string()))?;
+
+        // Poll the operation until done (bounded so we never hang).
+        if !payload.done {
+            for _ in 0..ONBOARD_POLL_ATTEMPTS {
+                let Some(op_name) = payload.name.clone() else {
+                    break;
+                };
+                tokio::time::sleep(ONBOARD_POLL_DELAY).await;
+                let op_resp = Self::apply_code_assist_headers(
+                    client.get(format!("{base}/{op_name}")),
+                    access_token,
+                )
+                .send()
+                .await
+                .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+                if !op_resp.status().is_success() {
+                    return Ok(None);
+                }
+                let next: OnboardUser = op_resp
+                    .json()
+                    .await
+                    .map_err(|e| SpendPanelError::ParseError("gemini".into(), e.to_string()))?;
+                payload = next;
+                if payload.done {
+                    break;
+                }
             }
-            Some(serde_json::Value::Object(o)) => o
-                .get("id")
-                .or_else(|| o.get("projectId"))
-                .and_then(|v| v.as_str())
-                .filter(|s| !s.trim().is_empty())
-                .map(|s| s.trim().to_string()),
-            _ => None,
+        }
+
+        if payload.done {
+            if let Some(project_id) = payload
+                .response
+                .as_ref()
+                .and_then(|resp| resp.cloudaicompanion_project.as_ref())
+                .and_then(|project| project.id.as_deref())
+                .filter(|id| !id.is_empty())
+            {
+                return Ok(Some(project_id.to_string()));
+            }
+            if let Some(project) = configured_project.filter(|p| !p.is_empty()) {
+                return Ok(Some(project.to_string()));
+            }
+        }
+        Ok(None)
+    }
+
+    /// Resolves the Code Assist project id, onboarding the account when no
+    /// managed project exists yet (this is what provisions quota access).
+    async fn resolve_project_id(
+        &self,
+        client: &reqwest::Client,
+        ctx: &ProviderContext,
+        access_token: &str,
+    ) -> Result<String, SpendPanelError> {
+        let configured_project = ctx
+            .config
+            .get("project")
+            .filter(|v| !v.is_empty())
+            .map(String::as_str);
+
+        let Some(load) = self
+            .load_code_assist(client, access_token, configured_project)
+            .await
+        else {
+            return Err(Self::project_required_error());
+        };
+
+        if let Some(project_id) = load.managed_project_id() {
+            return Ok(project_id);
+        }
+
+        // No managed project resolved: follow the tier logic.
+        let has_current_tier = load
+            .current_tier
+            .as_ref()
+            .and_then(|tier| tier.id.as_deref())
+            .is_some_and(|id| !id.is_empty());
+
+        if has_current_tier {
+            if let Some(project) = configured_project {
+                return Ok(project.to_string());
+            }
+            if let Some(reason) = Self::ineligible_message(&load.ineligible_tiers) {
+                return Err(SpendPanelError::ProviderError("gemini".into(), reason));
+            }
+            return Err(Self::project_required_error());
+        }
+
+        let tier_id = Self::pick_onboard_tier(&load.allowed_tiers);
+        if tier_id != FREE_TIER_ID && configured_project.is_none() {
+            return Err(Self::project_required_error());
+        }
+        match self
+            .onboard_user(client, access_token, &tier_id, configured_project)
+            .await?
+        {
+            Some(project_id) => Ok(project_id),
+            None => Err(Self::project_required_error()),
         }
     }
 
@@ -259,21 +560,15 @@ impl GeminiProvider {
         &self,
         client: &reqwest::Client,
         access_token: &str,
-        project_id: Option<&str>,
+        project_id: &str,
     ) -> Result<QuotaResponse, SpendPanelError> {
         let url = format!(
             "{}/v1internal:retrieveUserQuota",
             self.cloudcode_base().trim_end_matches('/')
         );
-        let body = match project_id {
-            Some(id) => format!(r#"{{"project": "{}"}}"#, id),
-            None => "{}".to_string(),
-        };
-        let resp = client
-            .post(url)
-            .header("Authorization", format!("Bearer {}", access_token))
-            .header("Content-Type", "application/json")
-            .body(body)
+        let body = serde_json::json!({ "project": project_id });
+        let resp = Self::apply_code_assist_headers(client.post(url), access_token)
+            .body(body.to_string())
             .send()
             .await
             .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
@@ -398,13 +693,10 @@ impl UsageProvider for GeminiProvider {
         let client = Self::build_client(ctx)?;
         let access_token = self.resolve_access_token(ctx, &client).await?;
 
-        let project_id = match ctx.config.get("project").filter(|v| !v.is_empty()) {
-            Some(p) => Some(p.clone()),
-            None => self.load_project_id(&client, &access_token).await,
-        };
+        let project_id = self.resolve_project_id(&client, ctx, &access_token).await?;
 
         let quota = self
-            .retrieve_quota(&client, &access_token, project_id.as_deref())
+            .retrieve_quota(&client, &access_token, &project_id)
             .await?;
         let quotas = Self::parse_quota(&quota)?;
         let mut snapshot = Self::snapshot_from_quotas(&quotas);
@@ -424,7 +716,7 @@ impl UsageProvider for GeminiProvider {
 mod tests {
     use super::*;
     use pretty_assertions::assert_eq;
-    use wiremock::matchers::{method, path};
+    use wiremock::matchers::{body_partial_json, header_regex, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
     const QUOTA: &str = r#"{
@@ -490,11 +782,97 @@ mod tests {
         assert_eq!(snapshot.primary_rate_window.unwrap().used, Some(70));
     }
 
+    #[test]
+    fn test_build_user_agent() {
+        let ua = GeminiProvider::build_user_agent();
+        assert!(ua.starts_with("GeminiCLI/0.57.0/gemini-code-assist (linux; "));
+        assert!(ua.ends_with("; terminal)"));
+        assert!(ua.contains(std::env::consts::ARCH));
+    }
+
+    #[test]
+    fn test_random_alphanumeric() {
+        let a = GeminiProvider::random_alphanumeric(8);
+        let b = GeminiProvider::random_alphanumeric(8);
+        assert_eq!(a.len(), 8);
+        assert!(
+            a.bytes()
+                .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit())
+        );
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn test_pick_onboard_tier_defaults_to_legacy() {
+        assert_eq!(GeminiProvider::pick_onboard_tier(&[]), LEGACY_TIER_ID);
+        assert_eq!(
+            GeminiProvider::pick_onboard_tier(&[UserTier {
+                id: Some("free-tier".into()),
+                is_default: Some(false),
+            }]),
+            "free-tier"
+        );
+        assert_eq!(
+            GeminiProvider::pick_onboard_tier(&[UserTier {
+                id: Some("standard-tier".into()),
+                is_default: Some(true),
+            }]),
+            "standard-tier"
+        );
+    }
+
     #[tokio::test]
     async fn test_fetch_usage_with_config_token() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1internal:loadCodeAssist"))
+            .and(header_regex("User-Agent", "^GeminiCLI/"))
+            .and(body_partial_json(serde_json::json!({
+                "metadata": {
+                    "ideType": "IDE_UNSPECIFIED",
+                    "platform": "PLATFORM_UNSPECIFIED",
+                    "pluginType": "GEMINI"
+                }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"cloudaicompanionProject":"proj-1"}"#,
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:retrieveUserQuota"))
+            .and(body_partial_json(
+                serde_json::json!({ "project": "proj-1" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(QUOTA, "application/json"))
+            .mount(&server)
+            .await;
+
+        let provider = GeminiProvider::with_base_url(&server.uri());
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("access_token".into(), "ya29-test".into());
+        let snapshot = provider.fetch_usage(&ctx).await.unwrap();
+        assert_eq!(snapshot.primary_rate_window.unwrap().used, Some(80));
+    }
+
+    #[tokio::test]
+    async fn test_load_code_assist_sends_user_agent_and_metadata() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:loadCodeAssist"))
+            .and(header_regex(
+                "User-Agent",
+                "^GeminiCLI/0.57.0/gemini-code-assist ",
+            ))
+            .and(header_regex("x-activity-request-id", "^[a-z0-9]{8}$"))
+            .and(body_partial_json(serde_json::json!({
+                "metadata": {
+                    "ideType": "IDE_UNSPECIFIED",
+                    "platform": "PLATFORM_UNSPECIFIED",
+                    "pluginType": "GEMINI"
+                }
+            })))
             .respond_with(ResponseTemplate::new(200).set_body_raw(
                 r#"{"cloudaicompanionProject":"proj-1"}"#,
                 "application/json",
@@ -515,11 +893,73 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_fetch_usage_onboards_when_no_project() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:loadCodeAssist"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"allowedTiers":[{"id":"free-tier"}]}"#,
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:onboardUser"))
+            .and(body_partial_json(serde_json::json!({
+                "tierId": "free-tier",
+                "metadata": { "pluginType": "GEMINI" }
+            })))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"done":true,"response":{"cloudaicompanionProject":{"id":"onboarded-1"}}}"#,
+                "application/json",
+            ))
+            .mount(&server)
+            .await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:retrieveUserQuota"))
+            .and(body_partial_json(
+                serde_json::json!({ "project": "onboarded-1" }),
+            ))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(QUOTA, "application/json"))
+            .mount(&server)
+            .await;
+
+        let provider = GeminiProvider::with_base_url(&server.uri());
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("access_token".into(), "ya29-test".into());
+        let snapshot = provider.fetch_usage(&ctx).await.unwrap();
+        assert_eq!(snapshot.primary_rate_window.unwrap().used, Some(80));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_usage_no_project_no_tier_is_clear_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("POST"))
+            .and(path("/v1internal:loadCodeAssist"))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(r#"{}"#, "application/json"))
+            .mount(&server)
+            .await;
+
+        let provider = GeminiProvider::with_base_url(&server.uri());
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("access_token".into(), "ya29-test".into());
+        let err = provider.fetch_usage(&ctx).await.unwrap_err();
+        assert!(matches!(
+            err,
+            SpendPanelError::ProviderError(_, m)
+                if m.contains("gemini set project") && m.contains("Google Cloud project")
+        ));
+    }
+
+    #[tokio::test]
     async fn test_retrieve_quota_401_is_auth_failed() {
         let server = MockServer::start().await;
         Mock::given(method("POST"))
             .and(path("/v1internal:loadCodeAssist"))
-            .respond_with(ResponseTemplate::new(500))
+            .respond_with(ResponseTemplate::new(200).set_body_raw(
+                r#"{"cloudaicompanionProject":"proj-1"}"#,
+                "application/json",
+            ))
             .mount(&server)
             .await;
         Mock::given(method("POST"))

@@ -1,10 +1,10 @@
 use anyhow::Result;
 use usage_monitor_cli::ProviderState;
 use usage_monitor_cli::config::{AppConfig, DEFAULT_ACCOUNT};
-use usage_monitor_cli::provider::opencode_go;
+use usage_monitor_cli::provider::gemini_oauth::GeminiOAuth;
 use usage_monitor_cli::provider::registry::ProviderRegistry;
 
-use crate::cli::{AccountCmd, ProviderCmd, WORKSPACE_PROVIDER, WorkspaceCmd};
+use crate::cli::{AccountCmd, GeminiCmd, ProviderCmd};
 
 pub(crate) fn state_label(state: ProviderState) -> &'static str {
     match state {
@@ -82,6 +82,113 @@ pub(crate) fn handle_provider_cmd(
         }
         ProviderCmd::Account(acmd) => handle_account_cmd(config, provider_id, acmd),
     }
+}
+
+/// Router for `usage-monitor-cli gemini ...`: config commands reuse the generic
+/// provider plumbing; login/status/logout drive the built-in OAuth flow.
+pub(crate) async fn handle_gemini_cmd(
+    registry: &ProviderRegistry,
+    config: AppConfig,
+    cmd: GeminiCmd,
+) -> Result<()> {
+    match cmd {
+        GeminiCmd::Show => handle_provider_cmd(registry, config, "gemini", ProviderCmd::Show),
+        GeminiCmd::Set { key, value } => {
+            handle_provider_cmd(registry, config, "gemini", ProviderCmd::Set { key, value })
+        }
+        GeminiCmd::Unset { key } => {
+            handle_provider_cmd(registry, config, "gemini", ProviderCmd::Unset { key })
+        }
+        GeminiCmd::Account(acmd) => {
+            handle_provider_cmd(registry, config, "gemini", ProviderCmd::Account(acmd))
+        }
+        GeminiCmd::Login => gemini_login(&config).await,
+        GeminiCmd::Status => gemini_status(&config),
+        GeminiCmd::Logout => gemini_logout(&config),
+    }
+}
+
+/// Resolves the gemini credentials path, honoring a configured
+/// `credentials_path` on the default account.
+fn gemini_creds_path(config: &AppConfig) -> std::path::PathBuf {
+    let configured = config
+        .account_config("gemini", DEFAULT_ACCOUNT)
+        .and_then(|m| m.get("credentials_path").cloned());
+    GeminiOAuth::resolve_creds_path(configured.as_deref())
+}
+
+async fn gemini_login(config: &AppConfig) -> Result<()> {
+    let oauth = GeminiOAuth::prod().with_creds_path(gemini_creds_path(config));
+    oauth
+        .login(true, None)
+        .await
+        .map_err(|e| anyhow::anyhow!("{}", e))?;
+    Ok(())
+}
+
+#[derive(serde::Deserialize)]
+struct CredsView {
+    #[serde(default)]
+    access_token: Option<String>,
+    #[serde(default)]
+    refresh_token: Option<String>,
+    #[serde(default)]
+    expiry_date: Option<f64>,
+}
+
+fn gemini_status(config: &AppConfig) -> Result<()> {
+    let path = gemini_creds_path(config);
+    if !path.exists() {
+        println!("gemini: no credentials at {}", path.display());
+        println!("  run `usage-monitor-cli gemini login` to sign in with Google");
+        return Ok(());
+    }
+    let raw = std::fs::read_to_string(&path)
+        .map_err(|e| anyhow::anyhow!("cannot read {}: {}", path.display(), e))?;
+    let creds: CredsView = serde_json::from_str(&raw)
+        .map_err(|e| anyhow::anyhow!("cannot parse {}: {}", path.display(), e))?;
+    println!("gemini credentials ({})", path.display());
+    match creds.access_token.filter(|t| !t.is_empty()) {
+        Some(token) => println!("  access_token = {}", mask_value("access_token", &token)),
+        None => println!("  access_token = (none)"),
+    }
+    let has_refresh = creds.refresh_token.is_some_and(|t| !t.is_empty());
+    println!(
+        "  refresh_token = {}",
+        if has_refresh { "present" } else { "missing" }
+    );
+    match creds.expiry_date {
+        Some(ms) => match chrono::DateTime::from_timestamp_millis(ms as i64) {
+            Some(expires) => {
+                let state = if expires > chrono::Utc::now() {
+                    "valid"
+                } else {
+                    "expired"
+                };
+                println!(
+                    "  expires = {} ({state})",
+                    expires
+                        .with_timezone(&chrono::Utc)
+                        .format("%Y-%m-%d %H:%M:%S UTC")
+                );
+            }
+            None => println!("  expires = (invalid)"),
+        },
+        None => println!("  expires = (unknown)"),
+    }
+    Ok(())
+}
+
+fn gemini_logout(config: &AppConfig) -> Result<()> {
+    let path = gemini_creds_path(config);
+    if path.exists() {
+        std::fs::remove_file(&path)
+            .map_err(|e| anyhow::anyhow!("cannot remove {}: {}", path.display(), e))?;
+        println!("removed {}", path.display());
+    } else {
+        println!("no credentials to remove at {}", path.display());
+    }
+    Ok(())
 }
 
 pub(crate) fn handle_account_cmd(
@@ -174,58 +281,6 @@ fn print_config_removed(
     Ok(())
 }
 
-pub(crate) fn handle_workspace(mut config: AppConfig, cmd: WorkspaceCmd) -> Result<()> {
-    match cmd {
-        WorkspaceCmd::Add {
-            workspace,
-            name,
-            account,
-        } => {
-            let current = config
-                .account_workspaces(WORKSPACE_PROVIDER, &account)
-                .to_vec();
-            let ids = opencode_go::add_workspace(&current, &workspace, name.as_deref())
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            config.set_account_workspaces(WORKSPACE_PROVIDER, &account, ids.clone());
-            let path = save_config(&config)?;
-            println!("workspaces = [{}] ({})", ids.join(", "), path.display());
-        }
-        WorkspaceCmd::Remove { workspace, account } => {
-            let current = config
-                .account_workspaces(WORKSPACE_PROVIDER, &account)
-                .to_vec();
-            let ids = opencode_go::remove_workspace(&current, &workspace)
-                .map_err(|e| anyhow::anyhow!("{}", e))?;
-            config.set_account_workspaces(WORKSPACE_PROVIDER, &account, ids.clone());
-            let path = save_config(&config)?;
-            if ids.is_empty() {
-                println!("workspaces = [] — auto-discovery ({})", path.display());
-            } else {
-                println!("workspaces = [{}] ({})", ids.join(", "), path.display());
-            }
-        }
-        WorkspaceCmd::List { account } => {
-            let current = config
-                .account_workspaces(WORKSPACE_PROVIDER, &account)
-                .to_vec();
-            if current.is_empty() {
-                println!("(no workspaces configured — auto-discovery will be used)");
-            } else {
-                for entry in &current {
-                    match opencode_go::parse_workspace_entry(entry) {
-                        Some(ws) => match &ws.name {
-                            Some(name) => println!("{:<30} {}", ws.id, name),
-                            None => println!("{}", ws.id),
-                        },
-                        None => println!("{}", entry),
-                    }
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 fn set_account_toggle(
     mut config: AppConfig,
     provider_id: &str,
@@ -287,17 +342,6 @@ fn print_account(config: &AppConfig, provider_id: &str, account: &str) {
         keys.sort();
         for key in keys {
             println!("  {} = {}", key, mask_value(key, &map[key]));
-        }
-    }
-    if provider_id == WORKSPACE_PROVIDER {
-        for entry in config.account_workspaces(provider_id, account) {
-            match usage_monitor_cli::provider::opencode_go::parse_workspace_entry(entry) {
-                Some(ws) => match &ws.name {
-                    Some(name) => println!("  {:<28} {}", ws.id, name),
-                    None => println!("  {}", ws.id),
-                },
-                None => println!("  {}", entry),
-            }
         }
     }
 }

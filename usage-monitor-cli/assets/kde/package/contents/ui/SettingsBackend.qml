@@ -96,14 +96,6 @@ Item {
         runHelper("account-remove --provider " + shellQuote(providerId) + " --name " + shellQuote(name))
     }
 
-    function workspaceAdd(workspace, name) {
-        runHelper("workspace-add --workspace " + shellQuote(workspace) + (name ? " --name " + shellQuote(name) : ""))
-    }
-
-    function workspaceRemove(workspace) {
-        runHelper("workspace-remove --workspace " + shellQuote(workspace))
-    }
-
     function cacheClear() {
         runHelper("cache-clear")
     }
@@ -223,8 +215,6 @@ Item {
                 || sourceName.indexOf(" batch-set-state ") !== -1
                 || sourceName.indexOf(" account-save ") !== -1
                 || sourceName.indexOf(" account-remove ") !== -1
-                || sourceName.indexOf(" workspace-add ") !== -1
-                || sourceName.indexOf(" workspace-remove ") !== -1
                 || sourceName.indexOf(" update-apply ") !== -1
                 || sourceName.indexOf(" update-dismiss ") !== -1
 

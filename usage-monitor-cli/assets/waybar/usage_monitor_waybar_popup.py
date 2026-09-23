@@ -785,14 +785,6 @@ def _build_backend_class(qt: dict[str, Any]):
         def accountRemove(self, provider_id: str, name: str) -> None:
             self._start("mutation", lambda: _result(data.account_remove(provider_id, name)))
 
-        @Slot(str, str)
-        def workspaceAdd(self, workspace: str, name: str) -> None:
-            self._start("mutation", lambda: _result(data.workspace_add(workspace, name)))
-
-        @Slot(str)
-        def workspaceRemove(self, workspace: str) -> None:
-            self._start("mutation", lambda: _result(data.workspace_remove(workspace)))
-
         @Slot()
         def cacheClear(self) -> None:
             def work() -> dict[str, Any]:

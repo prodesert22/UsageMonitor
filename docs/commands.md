@@ -24,9 +24,6 @@ desktop widgets, see [widgets/README.md](widgets/README.md).
 | `<provider> show` | Show any registered provider's state and configured accounts; secret values are masked |
 | `<provider> set <key> <value>` | Set a config value on the `default` account (e.g. `token`, `api_key`, `credentials_path`) |
 | `<provider> unset <key>` | Remove a config key from the `default` account |
-| `opencode-go workspace add <id\|url> [name] [--account <name>]` | Add an OpenCode Go workspace; accepts a `wrk_...` id or the dashboard URL, with an optional display name |
-| `opencode-go workspace remove <id\|url> [--account <name>]` | Remove a workspace; an empty list returns to auto-discovery |
-| `opencode-go workspace list [--account <name>]` | List configured workspaces |
 
 All state persists in `~/.config/usage-monitor/config.toml`. Providers are
 auto-enabled when their credentials are detected (credential files for
@@ -79,10 +76,10 @@ usage-monitor-cli fetch anthropic --api-key sk-ant-...
 usage-monitor-cli anthropic set api_key sk-ant-...
 usage-monitor-cli anthropic show
 
-# OpenCode Go: manual token + workspaces (see providers/opencode-go.md)
-usage-monitor-cli opencode-go set token '<Cookie header, auth=Fe26 value, or bare Fe26 value>'
+# OpenCode Go: API key (auto-detected from ~/.local/share/opencode/auth.json,
+# or set explicitly — see providers/opencode-go.md)
+usage-monitor-cli opencode-go set token '<opencode-go API key>'
 usage-monitor-cli enable opencode-go
-usage-monitor-cli opencode-go workspace add https://opencode.ai/workspace/wrk_xxx/go
 
 # Other provider config examples
 usage-monitor-cli openai set api_key sk-...

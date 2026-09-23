@@ -68,8 +68,6 @@ KCM.SimpleKCM {
                 property string newName: ""
                 property string newLabel: ""
                 property var newFields: ({})
-                property string newWsId: ""
-                property string newWsName: ""
                 Layout.fillWidth: true
                 spacing: Kirigami.Units.smallSpacing
 
@@ -227,77 +225,6 @@ KCM.SimpleKCM {
                             settingsRow.newName.trim(),
                             settingsRow.newLabel.trim(),
                             JSON.stringify(settingsRow.newFields))
-                    }
-
-                    // ---- opencode-go workspaces ----
-                    ColumnLayout {
-                        visible: settingsRow.modelData.authKind === "opencode"
-                        Layout.fillWidth: true
-                        Layout.topMargin: Kirigami.Units.smallSpacing
-                        spacing: Kirigami.Units.smallSpacing
-
-                        PlasmaComponents3.Label {
-                            text: "Workspaces"
-                            font.bold: true
-                            opacity: 0.8
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        }
-
-                        Repeater {
-                            model: settingsRow.modelData.workspaces || []
-                            delegate: RowLayout {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                spacing: Kirigami.Units.smallSpacing
-
-                                PlasmaComponents3.Label {
-                                    Layout.fillWidth: true
-                                    text: "• " + modelData.id + (modelData.name ? " — " + modelData.name : "")
-                                    elide: Text.ElideRight
-                                    opacity: 0.8
-                                    font.pointSize: Kirigami.Theme.smallFont.pointSize
-                                }
-
-                                QQC2.ToolButton {
-                                    icon.name: "list-remove"
-                                    text: "Remove"
-                                    display: QQC2.AbstractButton.IconOnly
-                                    QQC2.ToolTip.visible: hovered
-                                    QQC2.ToolTip.text: "Remove workspace " + modelData.id
-                                    onClicked: backend.workspaceRemove(modelData.id)
-                                }
-                            }
-                        }
-
-                        PlasmaComponents3.Label {
-                            visible: !(settingsRow.modelData.workspaces && settingsRow.modelData.workspaces.length)
-                            text: "No workspaces configured — auto-discovery is used."
-                            opacity: 0.65
-                            font.pointSize: Kirigami.Theme.smallFont.pointSize
-                        }
-
-                        QQC2.TextField {
-                            Layout.fillWidth: true
-                            placeholderText: "Workspace id (e.g. wrk_…)"
-                            selectByMouse: true
-                            text: settingsRow.newWsId
-                            onTextChanged: settingsRow.newWsId = text
-                        }
-
-                        QQC2.TextField {
-                            Layout.fillWidth: true
-                            placeholderText: "Workspace name (optional)"
-                            selectByMouse: true
-                            text: settingsRow.newWsName
-                            onTextChanged: settingsRow.newWsName = text
-                        }
-
-                        PlasmaComponents3.Button {
-                            text: "Add workspace"
-                            icon.name: "list-add"
-                            enabled: settingsRow.newWsId.trim().length > 0
-                            onClicked: backend.workspaceAdd(settingsRow.newWsId.trim(), settingsRow.newWsName.trim())
-                        }
                     }
                 }
 

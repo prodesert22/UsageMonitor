@@ -1,5 +1,4 @@
 use clap::{Args, Parser, Subcommand, ValueEnum};
-use usage_monitor_cli::config::DEFAULT_ACCOUNT;
 
 #[derive(Parser)]
 #[command(
@@ -34,6 +33,8 @@ pub(crate) enum Command {
     Anthropic(ProviderCmd),
     #[command(name = "openai", subcommand)]
     OpenAI(ProviderCmd),
+    #[command(name = "gemini", subcommand)]
+    Gemini(GeminiCmd),
     Fetch {
         provider: Option<String>,
         #[arg(long)]
@@ -165,6 +166,26 @@ pub(crate) enum AccountCmd {
 }
 
 #[derive(Subcommand)]
+pub(crate) enum GeminiCmd {
+    /// Log in to Google and store Gemini credentials (browser OAuth)
+    Login,
+    /// Show Gemini credential status
+    Status,
+    /// Remove stored Gemini credentials
+    Logout,
+    Show,
+    Set {
+        key: String,
+        value: String,
+    },
+    Unset {
+        key: String,
+    },
+    #[command(subcommand)]
+    Account(AccountCmd),
+}
+
+#[derive(Subcommand)]
 pub(crate) enum OpencodeGoCmd {
     Show,
     Set {
@@ -176,27 +197,4 @@ pub(crate) enum OpencodeGoCmd {
     },
     #[command(subcommand)]
     Account(AccountCmd),
-    #[command(subcommand)]
-    Workspace(WorkspaceCmd),
 }
-
-#[derive(Subcommand)]
-pub(crate) enum WorkspaceCmd {
-    Add {
-        workspace: String,
-        name: Option<String>,
-        #[arg(long, default_value = DEFAULT_ACCOUNT)]
-        account: String,
-    },
-    Remove {
-        workspace: String,
-        #[arg(long, default_value = DEFAULT_ACCOUNT)]
-        account: String,
-    },
-    List {
-        #[arg(long, default_value = DEFAULT_ACCOUNT)]
-        account: String,
-    },
-}
-
-pub(crate) const WORKSPACE_PROVIDER: &str = "opencode-go";

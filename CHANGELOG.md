@@ -24,6 +24,23 @@ notes live in [`releases/`](releases/).
   release notes (GitHub, embedded fallback); `widget sync [target]` now
   accepts an optional target so the widget's Update button syncs only itself.
 
+### Changed
+- **opencode-go provider moved to the official Zen usage endpoint.**
+  `GET https://opencode.ai/zen/go/v1/usage` with `Authorization: Bearer <key>`
+  replaces the dashboard-cookie scraping (the legacy workspace pages now
+  redirect to the console login, so the old session cookie is rejected). The
+  key is auto-detected from `~/.local/share/opencode/auth.json`
+  (`opencode-go.key`) or `OPENCODE_API_KEY`, falling back to
+  `opencode-go set token <key>`; the same rolling (5h) / weekly / monthly
+  used percents are reported, and a rate-limited window shows as exhausted.
+  Workspace pinning (`opencode-go workspace add|remove|list`, the widget
+  workspace managers, and the `workspaces` fetch plumbing) was removed — one
+  key covers the whole account, and stale `workspaces = [...]` config entries
+  are ignored. If you used the cookie setup, set the API key and re-enable.
+- **KDE popup no longer shows a phantom horizontal scrollbar.** The usage
+  list scrolls vertically only now, so long wrapped lines (e.g. provider
+  error messages) don't summon a horizontal bar.
+
 ## [0.8.1]
 
 ### Added

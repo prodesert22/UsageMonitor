@@ -73,10 +73,6 @@ pub(crate) fn provider_context(
         if let Some(token) = &account.token {
             ctx.config.insert("token".into(), token.clone());
         }
-        if !account.workspaces.is_empty() {
-            ctx.config
-                .insert("workspaces".into(), account.workspaces.join(","));
-        }
     }
     if let Some(key) = api_key {
         ctx.config.insert("api_key".into(), key.to_string());

@@ -30,7 +30,9 @@ pub struct AccountSettings {
     /// Auth token/cookie for providers with manual authentication.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub token: Option<String>,
-    /// Workspace IDs (providers that support multiple workspaces, e.g. opencode-go).
+    /// Legacy workspace list, kept so old config files still load. It is no
+    /// longer read by any provider (opencode-go workspace pinning was removed
+    /// when the provider moved to the official Zen usage endpoint).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub workspaces: Vec<String>,
     /// Other provider-specific keys (api_key, credentials_path, ...), stored

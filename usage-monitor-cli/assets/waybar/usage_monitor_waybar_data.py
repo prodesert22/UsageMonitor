@@ -85,7 +85,7 @@ CONNECT_HINTS = {
     "anthropic": "Set an API key: `usage-monitor-cli anthropic set api_key sk-…`.",
     "openai": "Set an API key: `usage-monitor-cli openai set api_key sk-…`.",
     "gemini": "Run `gcloud auth application-default login`, then refresh.",
-    "opencode-go": "Configure workspaces: `usage-monitor-cli opencode-go workspace add <id>`.",
+    "opencode-go": "Set an API key: `usage-monitor-cli opencode-go set token <key>` (auto-detected from ~/.local/share/opencode/auth.json).",
     "kimi": "Set a kimi-auth token: `usage-monitor-cli kimi set token <kimi-auth-jwt>`.",
 }
 
@@ -140,7 +140,7 @@ PROVIDER_AUTH: dict[str, dict[str, Any]] = {
     "claude": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path", placeholder="~/.claude/.credentials.json")], "setupHint": _OAUTH_SETUP["claude"]},
     "gemini": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path"), _field("access_token", "Access token", secret=True)], "setupHint": _OAUTH_SETUP["gemini"]},
     "antigravity": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path"), _field("access_token", "Access token", secret=True)], "setupHint": _OAUTH_SETUP["antigravity"]},
-    "opencode-go": {"kind": "opencode", "fields": [_field("token", "Session cookie", secret=True)]},
+    "opencode-go": {"kind": "token", "fields": [_field("token", "API key", secret=True)]},
 }
 
 _DEFAULT_AUTH = {"kind": "api_key", "fields": _API_KEY}
@@ -972,8 +972,8 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
     usage: dict[str, Any] = {}
     extras: list[dict[str, Any]] = []
     # Match windows to slots by id: the CLI appends named extra windows
-    # (e.g. Codex "Additional" rate limits, opencode-go workspaces) after the
-    # standard ones, and mapping positionally mislabels them as Monthly.
+    # (e.g. Codex "Additional" rate limits) after the standard ones, and
+    # mapping positionally mislabels them as Monthly.
     for window in [w for w in windows if isinstance(w, dict)]:
         wid = str(window.get("id") or "")
         slot = {
@@ -1370,20 +1370,6 @@ def account_text_for(accounts: list[dict[str, Any]]) -> str:
     return str(accounts[0].get("label") or accounts[0].get("id") or "") if accounts else ""
 
 
-def list_workspaces(account: str | None = None) -> list[dict[str, str]]:
-    cmd = ["opencode-go", "workspace", "list"]
-    if account:
-        cmd += ["--account", account]
-    workspaces: list[dict[str, str]] = []
-    for raw in cli_output(cmd).splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("("):
-            continue
-        parts = stripped.split(None, 1)
-        workspaces.append({"id": parts[0], "name": parts[1].strip() if len(parts) > 1 else ""})
-    return workspaces
-
-
 def _is_implicit_default(account: dict[str, Any]) -> bool:
     return account.get("id") == "default" and "auto-detected" in str(account.get("label") or "")
 
@@ -1422,17 +1408,15 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
     ids = [str(item["id"]) for item in items]
 
     # Each provider's accounts need a separate `<provider> show` call. Run them
-    # (plus the workspace list and version) concurrently — subprocess.run releases
-    # the GIL while waiting, so this collapses ~30 sequential spawns into one wave.
+    # (plus the version) concurrently — subprocess.run releases the GIL while
+    # waiting, so this collapses ~30 sequential spawns into one wave.
     with ThreadPoolExecutor(max_workers=16) as pool:
         accounts_iter = pool.map(parse_accounts, ids)
         version_future = pool.submit(cli_version)
         schemes_future = pool.submit(installed_schemes)
-        workspaces_future = pool.submit(list_workspaces) if "opencode-go" in ids else None
         accounts_by = dict(zip(ids, accounts_iter, strict=False))
         cli_ver = version_future.result()
         schemes = schemes_future.result()
-        workspaces = workspaces_future.result() if workspaces_future else []
 
     providers = []
     for item in items:
@@ -1454,8 +1438,6 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
             "accountFields": auth["fields"],
             "setupHint": auth.get("setupHint", ""),
         }
-        if provider_id == "opencode-go":
-            entry["workspaces"] = workspaces
         providers.append(entry)
     pinnable = [
         target
@@ -1827,22 +1809,6 @@ def account_save(provider_id: str, name: str, label: str, values: Mapping[str, A
 
 def account_remove(provider_id: str, name: str) -> subprocess.CompletedProcess[str]:
     return run_cli([provider_id, "account", "remove", name])
-
-
-def workspace_add(workspace: str, name: str = "", account: str = "") -> subprocess.CompletedProcess[str]:
-    cmd = ["opencode-go", "workspace", "add", workspace]
-    if name:
-        cmd.append(name)
-    if account:
-        cmd += ["--account", account]
-    return run_cli(cmd)
-
-
-def workspace_remove(workspace: str, account: str = "") -> subprocess.CompletedProcess[str]:
-    cmd = ["opencode-go", "workspace", "remove", workspace]
-    if account:
-        cmd += ["--account", account]
-    return run_cli(cmd)
 
 
 def cache_clear() -> None:

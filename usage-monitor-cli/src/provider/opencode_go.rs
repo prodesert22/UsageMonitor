@@ -1,65 +1,44 @@
-//! Provider for OpenCode Go via the opencode.ai web dashboard.
+//! Provider for OpenCode Go via the official Zen usage endpoint.
 //!
-//! Manual setup: there is no public usage API, so this provider authenticates
-//! with a browser session Cookie header configured by the user and scrapes the
-//! workspace dashboard hydration payload. One cookie can cover multiple
-//! workspaces. See `docs/providers/opencode-go.md` for the full extraction spec.
+//! Setup: the provider calls `GET https://opencode.ai/zen/go/v1/usage` with
+//! the OpenCode Go API key as `Authorization: Bearer <key>` and maps the
+//! account-wide `rolling` (5h), `weekly`, and optional `monthly` windows —
+//! the same used percents the OpenCode dashboard shows. The key can be set
+//! explicitly (`opencode-go set token <key>`) or auto-detected from
+//! `~/.local/share/opencode/auth.json` (the `opencode-go` entry, falling back
+//! to the `opencode` entry).
+//! See `docs/providers/opencode-go.md` for the full spec.
 
 use async_trait::async_trait;
-use chrono::Utc;
+use chrono::{DateTime, Utc};
 
 use crate::error::SpendPanelError;
-use crate::model::{NamedRateWindow, RateWindow, RateWindowStatus, UsageSnapshot};
+use crate::model::{RateWindow, RateWindowStatus, UsageSnapshot};
 use crate::provider::{ProviderContext, ProviderMetadata, UsageProvider};
 
 const DEFAULT_BASE: &str = "https://opencode.ai";
-/// Build-specific hash of the SolidStart server function that lists
-/// workspaces. Changes when opencode.ai redeploys; users can bypass discovery
-/// by configuring `workspaces` explicitly.
-const WORKSPACES_SERVER_ID: &str =
-    "def39973159c7f0483d8793a822b8dbb10d067e12c65455fcb4608459ba0234f";
-const USER_AGENT: &str = "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/143.0.0.0 Safari/537.36";
+const USAGE_PATH: &str = "/zen/go/v1/usage";
+/// Environment variable holding the OpenCode Go API key (same name CodexBar uses).
+const API_KEY_ENV: &str = "OPENCODE_API_KEY";
+/// File holding the desktop login, whose key entries work as Bearer keys for
+/// the usage endpoint: `$XDG_DATA_HOME/opencode/auth.json`, falling back to
+/// `~/.local/share/opencode/auth.json`.
+const AUTH_FILE_REL: &str = "opencode/auth.json";
+const AUTH_FILE_FALLBACK_REL: &str = ".local/share/opencode/auth.json";
+/// Login-file entries tried in order when no explicit key is configured: the
+/// Go key first, then the main Console key (valid for the endpoint, bound to
+/// whatever subscription that login holds).
+const AUTH_FILE_ENTRIES: &[&str] = &["opencode-go", "opencode"];
 
-/// One parsed usage window from the dashboard payload.
+/// One parsed usage window from the endpoint payload.
 #[derive(Debug, Clone, Copy, PartialEq)]
 struct ParsedWindow {
-    /// 0–100.
+    /// 0–100 (used percent, as the dashboard shows it).
     percent: f64,
-    reset_in_sec: i64,
-}
-
-/// A workspace reference: id plus an optional human-readable name.
-///
-/// Names come from the discovery payload (fetched automatically) or from a
-/// manual `wrk_id=Name` config entry, which takes precedence.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WorkspaceRef {
-    pub id: String,
-    pub name: Option<String>,
-}
-
-impl WorkspaceRef {
-    /// Name when known, id otherwise.
-    pub fn display_name(&self) -> &str {
-        self.name.as_deref().unwrap_or(&self.id)
-    }
-
-    /// Serializes back to a config entry (`wrk_id` or `wrk_id=Name`).
-    pub fn to_entry(&self) -> String {
-        match &self.name {
-            Some(name) => format!("{}={}", self.id, name),
-            None => self.id.clone(),
-        }
-    }
-}
-
-/// Usage of a single workspace.
-#[derive(Debug, Clone, PartialEq)]
-struct WorkspaceUsage {
-    workspace: WorkspaceRef,
-    rolling: ParsedWindow,
-    weekly: ParsedWindow,
-    monthly: Option<ParsedWindow>,
+    /// Server-reported reset time.
+    resets_at: Option<DateTime<Utc>>,
+    /// True when the server reports the window as `rate-limited`.
+    limited: bool,
 }
 
 pub struct OpenCodeGoProvider {
@@ -74,8 +53,8 @@ impl OpenCodeGoProvider {
             metadata: ProviderMetadata {
                 id: "opencode-go",
                 name: "OpenCode Go",
-                description: "OpenCode Go workspace usage via opencode.ai dashboard (manual cookie)",
-                auth_methods: &["cookie"],
+                description: "OpenCode Go quota via the official Zen usage endpoint (API key)",
+                auth_methods: &["api_key"],
                 website: Some("https://opencode.ai"),
             },
             base_url: None,
@@ -101,131 +80,52 @@ impl OpenCodeGoProvider {
             .map_err(|e| SpendPanelError::NetworkError(e.to_string()))
     }
 
-    /// Session cookie from the `token` config field (`cookie` kept as alias).
-    fn resolve_cookie(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
-        let raw = ctx.config.get("token").or_else(|| ctx.config.get("cookie"));
-        match raw.map(|c| c.trim()) {
-            Some(cookie) if !cookie.is_empty() => Ok(normalize_cookie_header(cookie)),
-            _ => Err(SpendPanelError::AuthFailed(
-                "opencode-go".into(),
-                "no session token configured; run `usage-monitor opencode-go set token \"<Cookie header or auth value>\"` (see docs/providers/opencode-go.md)".into(),
-            )),
+    /// API key from the `token`/`api_key` config field, the `OPENCODE_API_KEY`
+    /// env var, or the desktop login file. A pasted `Bearer <key>` value is
+    /// accepted and stripped. Legacy cookie values from the pre-endpoint
+    /// setup are never sent: they are skipped, and when nothing else
+    /// resolves, the error tells the user to configure an API key instead.
+    fn resolve_api_key(ctx: &ProviderContext) -> Result<String, SpendPanelError> {
+        let mut saw_legacy_cookie = false;
+        for field in ["token", "api_key"] {
+            if let Some(raw) = ctx.config.get(field) {
+                if looks_like_cookie(raw) {
+                    saw_legacy_cookie = true;
+                    continue;
+                }
+                if let Some(key) = clean_api_key(raw) {
+                    return Ok(key);
+                }
+            }
         }
+        if let Some(raw) = std::env::var_os(API_KEY_ENV).and_then(|v| v.into_string().ok())
+            && let Some(key) = clean_api_key(&raw)
+        {
+            return Ok(key);
+        }
+        if let Some(key) = Self::auth_file_key() {
+            return Ok(key);
+        }
+        Err(SpendPanelError::AuthFailed(
+            "opencode-go".into(),
+            if saw_legacy_cookie {
+                "the configured token is a legacy dashboard cookie, which the usage endpoint rejects; run `usage-monitor-cli opencode-go set token \"<API key>\"` or sign in with opencode so ~/.local/share/opencode/auth.json holds a key (see docs/providers/opencode-go.md)".into()
+            } else {
+                "no API key configured; run `usage-monitor-cli opencode-go set token \"<key>\"` or sign in with opencode so ~/.local/share/opencode/auth.json holds an opencode-go key (see docs/providers/opencode-go.md)".into()
+            },
+        ))
     }
 
-    /// Workspace refs from config (`workspaces = "wrk_a=Name,wrk_b"`), if set.
-    fn configured_workspaces(ctx: &ProviderContext) -> Option<Vec<WorkspaceRef>> {
-        let raw = ctx.config.get("workspaces")?;
-        let refs: Vec<WorkspaceRef> = raw.split(',').filter_map(parse_workspace_entry).collect();
-        if refs.is_empty() { None } else { Some(refs) }
-    }
-
-    /// A 200 response can still be a login page; detect signed-out payloads.
-    fn looks_signed_out(text: &str) -> bool {
-        let lower = text.to_lowercase();
-        lower.contains("login")
-            || lower.contains("sign in")
-            || lower.contains("auth/authorize")
-            || lower.contains("not associated with an account")
-            || lower.contains("actor of type \"public\"")
-    }
-
-    /// Discovers workspaces (id + name) via the internal server function.
-    async fn discover_workspaces(
-        base: &str,
-        client: &reqwest::Client,
-        cookie: &str,
-    ) -> Result<Vec<WorkspaceRef>, SpendPanelError> {
-        let url = format!("{}/_server?id={}", base, WORKSPACES_SERVER_ID);
-        let resp = client
-            .get(&url)
-            .header("cookie", cookie)
-            .header("x-server-id", WORKSPACES_SERVER_ID)
-            .header(
-                "x-server-instance",
-                format!("server-fn:{:x}", std::process::id()),
-            )
-            .header("origin", base.to_string())
-            .header("referer", format!("{}/", base))
-            .header(
-                "accept",
-                "text/javascript, application/json;q=0.9, */*;q=0.8",
-            )
-            .header("user-agent", USER_AGENT)
-            .send()
-            .await
-            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
-
-        let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
-
-        if status == 401 || status == 403 || Self::looks_signed_out(&body) {
-            return Err(SpendPanelError::AuthFailed(
-                "opencode-go".into(),
-                "session cookie rejected or expired; copy a fresh Cookie header".into(),
-            ));
-        }
-        if !status.is_success() {
-            return Err(SpendPanelError::ProviderError(
-                "opencode-go".into(),
-                format!("workspace discovery HTTP {}", status),
-            ));
-        }
-
-        let refs = parse_discovered_workspaces(&body);
-        if refs.is_empty() {
-            return Err(SpendPanelError::ParseError(
-                "opencode-go".into(),
-                "no workspace ids in discovery payload; configure `workspaces` manually".into(),
-            ));
-        }
-        Ok(refs)
-    }
-
-    /// Fetches and parses the usage of one workspace dashboard page.
-    async fn fetch_workspace_usage(
-        base: &str,
-        client: &reqwest::Client,
-        cookie: &str,
-        workspace: &WorkspaceRef,
-    ) -> Result<WorkspaceUsage, SpendPanelError> {
-        let workspace_id = &workspace.id;
-        let url = format!("{}/workspace/{}/go", base, workspace_id);
-        let resp = client
-            .get(&url)
-            .header("cookie", cookie)
-            .header("user-agent", USER_AGENT)
-            .header(
-                "accept",
-                "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
-            )
-            .send()
-            .await
-            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
-
-        let status = resp.status();
-        let body = resp
-            .text()
-            .await
-            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
-
-        if status == 401 || status == 403 || Self::looks_signed_out(&body) {
-            return Err(SpendPanelError::AuthFailed(
-                "opencode-go".into(),
-                "session cookie rejected or expired; copy a fresh Cookie header".into(),
-            ));
-        }
-        if !status.is_success() {
-            return Err(SpendPanelError::ProviderError(
-                "opencode-go".into(),
-                format!("workspace {} HTTP {}", workspace_id, status),
-            ));
-        }
-
-        parse_workspace_page(workspace, &body)
+    /// Reads the first usable key from the desktop login file, if present.
+    fn auth_file_key() -> Option<String> {
+        let path = auth_file_path()?;
+        let raw = std::fs::read_to_string(path).ok()?;
+        let json: serde_json::Value = serde_json::from_str(&raw).ok()?;
+        AUTH_FILE_ENTRIES
+            .iter()
+            .filter_map(|entry| json.get(entry)?.get("key")?.as_str())
+            .filter_map(clean_api_key)
+            .next()
     }
 
     fn rate_window(label: String, window_minutes: u32, w: &ParsedWindow) -> RateWindow {
@@ -237,313 +137,29 @@ impl OpenCodeGoProvider {
             limit: None,
             used: None,
             remaining: None,
-            resets_at: Some(Utc::now() + chrono::Duration::seconds(w.reset_in_sec.max(0))),
-            status: RateWindowStatus::from_ratio(ratio),
+            resets_at: w.resets_at,
+            status: if w.limited {
+                RateWindowStatus::Exhausted
+            } else {
+                RateWindowStatus::from_ratio(ratio)
+            },
         }
     }
 
-    fn snapshot_from_usages(usages: &[WorkspaceUsage]) -> UsageSnapshot {
+    fn snapshot_from_windows(
+        rolling: &ParsedWindow,
+        weekly: &ParsedWindow,
+        monthly: Option<&ParsedWindow>,
+    ) -> UsageSnapshot {
         let mut snapshot = UsageSnapshot::new("opencode-go");
         snapshot.collected_at = Utc::now();
-
-        let Some(first) = usages.first() else {
-            return snapshot;
-        };
-
-        let first_name = first.workspace.display_name();
-
-        snapshot.primary_rate_window = Some(Self::rate_window(
-            format!("{} Rolling (5h)", first_name),
-            300,
-            &first.rolling,
-        ));
-        snapshot.secondary_rate_window = Some(Self::rate_window(
-            format!("{} Weekly", first_name),
-            10_080,
-            &first.weekly,
-        ));
-        if let Some(monthly) = &first.monthly {
-            snapshot.tertiary_rate_window = Some(Self::rate_window(
-                format!("{} Monthly", first_name),
-                43_200,
-                monthly,
-            ));
+        snapshot.primary_rate_window = Some(Self::rate_window("Rolling (5h)".into(), 300, rolling));
+        snapshot.secondary_rate_window = Some(Self::rate_window("Weekly".into(), 10_080, weekly));
+        if let Some(monthly) = monthly {
+            snapshot.tertiary_rate_window =
+                Some(Self::rate_window("Monthly".into(), 43_200, monthly));
         }
-
-        // Additional workspaces (same cookie) become named extra windows.
-        for usage in &usages[1..] {
-            let ws = &usage.workspace;
-            let name = ws.display_name();
-            snapshot.extra_rate_windows.push(NamedRateWindow {
-                id: format!("{}-rolling", ws.id),
-                label: format!("{} Rolling (5h)", name),
-                window: Self::rate_window(format!("{} Rolling (5h)", name), 300, &usage.rolling),
-            });
-            snapshot.extra_rate_windows.push(NamedRateWindow {
-                id: format!("{}-weekly", ws.id),
-                label: format!("{} Weekly", name),
-                window: Self::rate_window(format!("{} Weekly", name), 10_080, &usage.weekly),
-            });
-            if let Some(monthly) = &usage.monthly {
-                snapshot.extra_rate_windows.push(NamedRateWindow {
-                    id: format!("{}-monthly", ws.id),
-                    label: format!("{} Monthly", name),
-                    window: Self::rate_window(format!("{} Monthly", name), 43_200, monthly),
-                });
-            }
-        }
-
         snapshot
-    }
-}
-
-/// Normalizes user-provided auth into a valid Cookie header value.
-///
-/// Accepted inputs:
-/// - Full Cookie header value: `auth=Fe26...; other=value`
-/// - Header line copied with name: `Cookie: auth=Fe26...`
-/// - Bare opencode auth cookie value: `Fe26...` → `auth=Fe26...`
-fn normalize_cookie_header(raw: &str) -> String {
-    let value = raw.trim();
-    let value = value
-        .strip_prefix("Cookie:")
-        .or_else(|| value.strip_prefix("cookie:"))
-        .map(str::trim)
-        .unwrap_or(value);
-
-    if looks_like_cookie_header(value) {
-        value.to_string()
-    } else {
-        format!("auth={}", value)
-    }
-}
-
-fn looks_like_cookie_header(value: &str) -> bool {
-    let first_pair = value.split(';').next().unwrap_or(value).trim();
-    let Some((name, cookie_value)) = first_pair.split_once('=') else {
-        return false;
-    };
-    !name.trim().is_empty()
-        && !cookie_value.trim().is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '_' | '-'))
-}
-
-/// Normalizes a workspace reference: bare `wrk_...` id, a dashboard URL
-/// containing `/workspace/<id>/`, or any string embedding a `wrk_` id.
-pub fn normalize_workspace_id(raw: &str) -> Option<String> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let start = trimmed.find("wrk_")?;
-    let id: String = trimmed[start..]
-        .chars()
-        .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-        .collect();
-    if id.len() > 4 { Some(id) } else { None }
-}
-
-/// Parses a config entry: `wrk_id`, `wrk_id=Name`, or a dashboard URL
-/// (optionally with `=Name`).
-pub fn parse_workspace_entry(raw: &str) -> Option<WorkspaceRef> {
-    let (id_part, name) = match raw.split_once('=') {
-        Some((id, name)) if !name.trim().is_empty() => (id, Some(name.trim().to_string())),
-        Some((id, _)) => (id, None),
-        None => (raw, None),
-    };
-    let id = normalize_workspace_id(id_part)?;
-    Some(WorkspaceRef { id, name })
-}
-
-fn validate_workspace_name(name: &str) -> Result<(), SpendPanelError> {
-    if name.contains(',') {
-        return Err(SpendPanelError::ConfigError(
-            "workspace name cannot contain comma".into(),
-        ));
-    }
-    Ok(())
-}
-
-fn canonical_workspace_refs(list: &[String]) -> Vec<WorkspaceRef> {
-    let mut refs: Vec<WorkspaceRef> = Vec::new();
-    for ws in list.iter().filter_map(|e| parse_workspace_entry(e)) {
-        match refs.iter_mut().find(|existing| existing.id == ws.id) {
-            Some(existing) => {
-                if ws.name.is_some() {
-                    existing.name = ws.name;
-                }
-            }
-            None => refs.push(ws),
-        }
-    }
-    refs
-}
-
-/// Adds a workspace (id or dashboard URL, with an optional name) to a list of
-/// config entries. Errors when the reference has no `wrk_` id. Adding an
-/// existing id only succeeds when a new/changed name is provided; unchanged
-/// duplicates are rejected.
-pub fn add_workspace(
-    list: &[String],
-    raw: &str,
-    name: Option<&str>,
-) -> Result<Vec<String>, SpendPanelError> {
-    let mut new_ref = parse_workspace_entry(raw).ok_or_else(|| {
-        SpendPanelError::ConfigError(format!(
-            "'{}' has no workspace id; expected wrk_... or a dashboard URL like https://opencode.ai/workspace/wrk_xxx/go",
-            raw
-        ))
-    })?;
-    if let Some(name) = name.map(str::trim).filter(|n| !n.is_empty()) {
-        validate_workspace_name(name)?;
-        new_ref.name = Some(name.to_string());
-    }
-    if let Some(name) = &new_ref.name {
-        validate_workspace_name(name)?;
-    }
-
-    let mut refs = canonical_workspace_refs(list);
-    match refs.iter_mut().find(|r| r.id == new_ref.id) {
-        Some(existing) => {
-            if new_ref.name.is_some() && existing.name != new_ref.name {
-                existing.name = new_ref.name;
-            } else {
-                return Err(SpendPanelError::ConfigError(format!(
-                    "workspace '{}' is already configured",
-                    existing.id
-                )));
-            }
-        }
-        None => refs.push(new_ref),
-    }
-    Ok(refs.iter().map(WorkspaceRef::to_entry).collect())
-}
-
-/// Removes a workspace (matched by id) from a list of config entries.
-pub fn remove_workspace(list: &[String], raw: &str) -> Result<Vec<String>, SpendPanelError> {
-    let id = normalize_workspace_id(raw).ok_or_else(|| {
-        SpendPanelError::ConfigError(format!("'{}' has no workspace id (expected wrk_...)", raw))
-    })?;
-    let refs = canonical_workspace_refs(list);
-    if !refs.iter().any(|r| r.id == id) {
-        return Err(SpendPanelError::ConfigError(format!(
-            "workspace '{}' is not configured",
-            id
-        )));
-    }
-
-    Ok(refs
-        .into_iter()
-        .filter(|r| r.id != id)
-        .map(|r| r.to_entry())
-        .collect())
-}
-
-/// Extracts workspaces (`wrk_...` id plus the `name:"..."` that follows it in
-/// the same object, when present) from a discovery payload.
-fn parse_discovered_workspaces(text: &str) -> Vec<WorkspaceRef> {
-    let mut refs: Vec<WorkspaceRef> = Vec::new();
-    let mut rest = text;
-    while let Some(pos) = rest.find("wrk_") {
-        let candidate: String = rest[pos..]
-            .chars()
-            .take_while(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
-        let after = &rest[pos + candidate.len().max(4)..];
-        if candidate.len() > 4 && !refs.iter().any(|r| r.id == candidate) {
-            // The name sits in the same object, e.g. {id:"wrk_x",name:"Default"}.
-            let segment_end = after.find('}').unwrap_or(after.len());
-            let name = extract_string(&after[..segment_end], "name");
-            refs.push(WorkspaceRef {
-                id: candidate,
-                name,
-            });
-        }
-        rest = after;
-    }
-    refs
-}
-
-/// Finds `key:"value"` (or `"key":"value"`) inside a segment.
-fn extract_string(segment: &str, key: &str) -> Option<String> {
-    let pos = segment.find(key)?;
-    let after = segment[pos + key.len()..]
-        .trim_start_matches('"')
-        .trim_start();
-    let after = after.strip_prefix(':')?.trim_start();
-    let after = after.strip_prefix('"')?;
-    let end = after.find('"')?;
-    let value = &after[..end];
-    if value.is_empty() {
-        None
-    } else {
-        Some(value.to_string())
-    }
-}
-
-/// Extracts `<window>...usagePercent: N` / `resetInSec: N` pairs from the
-/// dashboard hydration payload.
-fn parse_window(text: &str, window_key: &str) -> Option<ParsedWindow> {
-    for (start, _) in text.match_indices(window_key) {
-        // Window object ends at the first closing brace after the key. Some
-        // payloads also contain scalar billing fields such as
-        // `monthlyUsage:null` before the real workspace usage object; skip
-        // segments without `usagePercent` and keep searching.
-        let segment_end = text[start..]
-            .find('}')
-            .map(|i| start + i)
-            .unwrap_or(text.len());
-        let segment = &text[start..segment_end];
-
-        let Some(percent) = extract_number(segment, "usagePercent") else {
-            continue;
-        };
-        let reset_in_sec = extract_number(segment, "resetInSec").unwrap_or(0.0) as i64;
-
-        // `usagePercent` is already a percentage (0–100) and may carry decimal
-        // places (e.g. 0.7 means 0.7%). Older payload variants emitted ratios,
-        // but values ≤ 1.0 must not be scaled: that would turn 0.7% into 70%.
-        return Some(ParsedWindow {
-            percent: percent.clamp(0.0, 100.0),
-            reset_in_sec,
-        });
-    }
-
-    None
-}
-
-/// Finds `key: <number>` (with optional quotes around the number) inside a segment.
-fn extract_number(segment: &str, key: &str) -> Option<f64> {
-    let pos = segment.find(key)?;
-    let after = &segment[pos + key.len()..];
-    let after = after.trim_start().strip_prefix(':')?.trim_start();
-    let after = after.strip_prefix('"').unwrap_or(after);
-    let number: String = after
-        .chars()
-        .take_while(|c| c.is_ascii_digit() || *c == '.')
-        .collect();
-    number.parse().ok()
-}
-
-fn parse_workspace_page(
-    workspace: &WorkspaceRef,
-    text: &str,
-) -> Result<WorkspaceUsage, SpendPanelError> {
-    let rolling = parse_window(text, "rollingUsage");
-    let weekly = parse_window(text, "weeklyUsage");
-    match (rolling, weekly) {
-        (Some(rolling), Some(weekly)) => Ok(WorkspaceUsage {
-            workspace: workspace.clone(),
-            rolling,
-            weekly,
-            monthly: parse_window(text, "monthlyUsage"),
-        }),
-        _ => Err(SpendPanelError::ParseError(
-            "opencode-go".into(),
-            format!("workspace {} page is missing usage fields", workspace.id),
-        )),
     }
 }
 
@@ -553,63 +169,176 @@ impl Default for OpenCodeGoProvider {
     }
 }
 
+/// Login-file location: `$XDG_DATA_HOME/opencode/auth.json`, falling back to
+/// `~/.local/share/opencode/auth.json` when `XDG_DATA_HOME` is unset/empty.
+fn auth_file_path() -> Option<std::path::PathBuf> {
+    if let Some(xdg) = std::env::var_os("XDG_DATA_HOME")
+        && !xdg.is_empty()
+    {
+        return Some(std::path::PathBuf::from(xdg).join(AUTH_FILE_REL));
+    }
+    std::env::var_os("HOME").map(|h| std::path::PathBuf::from(h).join(AUTH_FILE_FALLBACK_REL))
+}
+
+/// Detects leftover values from the pre-endpoint cookie setup: a full
+/// `Cookie:` header, an `auth=<value>` pair, a multi-cookie header, or a
+/// bare Better-Auth session token. A lone `=` is NOT treated as a cookie so
+/// base64-padded API keys keep working.
+fn looks_like_cookie(raw: &str) -> bool {
+    let value = raw.trim();
+    let lower = value.to_lowercase();
+    value.contains(';')
+        || lower.starts_with("cookie:")
+        || lower.starts_with("auth=")
+        || value.starts_with("Fe26.")
+}
+
+/// True when an env/file value holds a usable key (trims whitespace, unlike a
+/// bare emptiness check).
+fn has_key_value(raw: &std::ffi::OsStr) -> bool {
+    raw.to_str().is_some_and(|s| clean_api_key(s).is_some())
+}
+
+/// Trims a pasted key, accepting a leading `Bearer ` scheme the same way
+/// other Bearer-token providers do. Empty values resolve to `None`.
+fn clean_api_key(raw: &str) -> Option<String> {
+    let value = raw.trim();
+    let value = value
+        .strip_prefix("Bearer ")
+        .or_else(|| value.strip_prefix("bearer "))
+        .map(str::trim)
+        .unwrap_or(value);
+    if value.is_empty() {
+        None
+    } else {
+        Some(value.to_string())
+    }
+}
+
+/// Extracts a server-provided error message (`{"error": {"message": ...}}` or
+/// `{"error": "..."}`), when present.
+fn server_error_message(body: &str) -> Option<String> {
+    let json: serde_json::Value = serde_json::from_str(body).ok()?;
+    let error = json.get("error")?;
+    if let Some(message) = error.get("message").and_then(|m| m.as_str()) {
+        return (!message.is_empty()).then(|| message.to_string());
+    }
+    error
+        .as_str()
+        .filter(|s| !s.is_empty())
+        .map(|s| s.to_string())
+}
+
+/// Parses one usage window (`{status, percent, resetsAt}`); returns `None`
+/// when the value is missing or malformed so callers can decide whether the
+/// window is required or optional.
+fn parse_window(value: Option<&serde_json::Value>) -> Option<ParsedWindow> {
+    let window = value?;
+    let percent = window.get("percent")?.as_f64()?;
+    if !percent.is_finite() || percent < 0.0 || percent > 100.0 {
+        return None;
+    }
+    let status = window.get("status").and_then(|s| s.as_str()).unwrap_or("");
+    if status != "ok" && status != "rate-limited" {
+        return None;
+    }
+    let resets_at = window
+        .get("resetsAt")
+        .or_else(|| window.get("resets_at"))
+        .or_else(|| window.get("renewsAt"))
+        .and_then(|v| v.as_str())
+        .and_then(|s| DateTime::parse_from_rfc3339(s).ok())
+        .map(|dt| dt.with_timezone(&Utc));
+    Some(ParsedWindow {
+        percent,
+        resets_at,
+        limited: status == "rate-limited",
+    })
+}
+
 #[async_trait]
 impl UsageProvider for OpenCodeGoProvider {
     fn metadata(&self) -> &ProviderMetadata {
         &self.metadata
     }
 
-    // Manual provider: nothing detectable on disk, stays disabled until the
-    // user configures a cookie and enables it.
     fn detect_credentials(&self) -> bool {
-        false
+        if std::env::var_os(API_KEY_ENV).is_some_and(|v| has_key_value(&v)) {
+            return true;
+        }
+        Self::auth_file_key().is_some()
     }
 
     async fn fetch_usage(&self, ctx: &ProviderContext) -> Result<UsageSnapshot, SpendPanelError> {
-        let cookie = Self::resolve_cookie(ctx)?;
+        let key = Self::resolve_api_key(ctx)?;
         let client = Self::build_client(ctx)?;
-        let base = self.api_base();
+        let url = format!("{}{}", self.api_base(), USAGE_PATH);
 
-        let workspaces = match Self::configured_workspaces(ctx) {
-            Some(mut refs) => {
-                // Pinned ids may lack names; enrich them from discovery on a
-                // best-effort basis (manual names always win).
-                if refs.iter().any(|r| r.name.is_none())
-                    && let Ok(discovered) = Self::discover_workspaces(base, &client, &cookie).await
-                {
-                    for r in refs.iter_mut().filter(|r| r.name.is_none()) {
-                        r.name = discovered
-                            .iter()
-                            .find(|d| d.id == r.id)
-                            .and_then(|d| d.name.clone());
-                    }
-                }
-                refs
-            }
-            None => Self::discover_workspaces(base, &client, &cookie).await?,
-        };
+        let resp = client
+            .get(&url)
+            .header("Authorization", format!("Bearer {}", key))
+            .header("Accept", "application/json")
+            .send()
+            .await
+            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
 
-        let mut usages = Vec::new();
-        let mut first_error: Option<SpendPanelError> = None;
-        for ws in &workspaces {
-            match Self::fetch_workspace_usage(base, &client, &cookie, ws).await {
-                Ok(usage) => usages.push(usage),
-                Err(e) => {
-                    tracing::warn!("opencode-go workspace {} failed: {}", ws.id, e);
-                    if first_error.is_none() {
-                        first_error = Some(e);
-                    }
-                }
-            }
+        let status = resp.status();
+        // `text()` consumes the response, so grab `retry-after` first.
+        let retry_after = resp
+            .headers()
+            .get("retry-after")
+            .and_then(|v| v.to_str().ok())
+            .and_then(|s| s.trim().parse::<u64>().ok());
+        let body = resp
+            .text()
+            .await
+            .map_err(|e| SpendPanelError::NetworkError(e.to_string()))?;
+
+        if status == reqwest::StatusCode::UNAUTHORIZED || status == reqwest::StatusCode::FORBIDDEN {
+            let detail = server_error_message(&body)
+                .map(|m| format!(": {}", m))
+                .unwrap_or_default();
+            return Err(SpendPanelError::AuthFailed(
+                "opencode-go".into(),
+                format!(
+                    "API key rejected (HTTP {}){}; check the key or subscription at https://opencode.ai",
+                    status.as_u16(),
+                    detail
+                ),
+            ));
+        }
+        if status == reqwest::StatusCode::TOO_MANY_REQUESTS {
+            return Err(SpendPanelError::RateLimited(
+                "opencode-go".into(),
+                retry_after,
+            ));
+        }
+        if !status.is_success() {
+            return Err(SpendPanelError::ProviderError(
+                "opencode-go".into(),
+                format!("usage endpoint HTTP {}", status.as_u16()),
+            ));
         }
 
-        if usages.is_empty() {
-            return Err(first_error.unwrap_or_else(|| {
-                SpendPanelError::ProviderError("opencode-go".into(), "no workspaces fetched".into())
-            }));
+        let json: serde_json::Value = serde_json::from_str(&body)
+            .map_err(|e| SpendPanelError::ParseError("opencode-go".into(), e.to_string()))?;
+        let usage = json.get("usage");
+        let rolling = parse_window(usage.and_then(|u| u.get("rolling")));
+        let weekly = parse_window(usage.and_then(|u| u.get("weekly")));
+        match (rolling, weekly) {
+            (Some(rolling), Some(weekly)) => {
+                let monthly = parse_window(usage.and_then(|u| u.get("monthly")));
+                Ok(Self::snapshot_from_windows(
+                    &rolling,
+                    &weekly,
+                    monthly.as_ref(),
+                ))
+            }
+            _ => Err(SpendPanelError::ParseError(
+                "opencode-go".into(),
+                "response is missing rolling/weekly usage windows".into(),
+            )),
         }
-
-        Ok(Self::snapshot_from_usages(&usages))
     }
 }
 
@@ -623,560 +352,369 @@ mod tests {
     use wiremock::matchers::{header, method, path};
     use wiremock::{Mock, MockServer, ResponseTemplate};
 
-    fn dashboard_page(rolling_pct: f64, weekly_pct: f64, monthly: Option<f64>) -> String {
+    fn usage_payload(rolling: &str, weekly: &str, monthly: Option<&str>) -> String {
         let monthly_part = monthly
-            .map(|m| format!(r#"monthlyUsage:{{usagePercent:{},resetInSec:864000}},"#, m))
+            .map(|m| format!(r#","monthly":{}"#, m))
             .unwrap_or_default();
         format!(
-            r#"<html><body><script>self.__data={{billing:{{rollingUsage:{{usagePercent:{},resetInSec:3600}},weeklyUsage:{{usagePercent:{},resetInSec:172800}},{}plan:"go"}}}};</script></body></html>"#,
-            rolling_pct, weekly_pct, monthly_part
+            r#"{{"usage":{{"rolling":{},"weekly":{}{}}}}}"#,
+            rolling, weekly, monthly_part
+        )
+    }
+
+    fn window(status: &str, percent: f64, resets_at: &str) -> String {
+        format!(
+            r#"{{"status":"{}","percent":{},"resetsAt":"{}"}}"#,
+            status, percent, resets_at
         )
     }
 
     #[test]
-    fn test_normalize_workspace_id() {
-        assert_eq!(
-            normalize_workspace_id("wrk_abc123"),
-            Some("wrk_abc123".into())
-        );
-        assert_eq!(
-            normalize_workspace_id("  wrk_abc123  "),
-            Some("wrk_abc123".into())
-        );
-        assert_eq!(
-            normalize_workspace_id("https://opencode.ai/workspace/wrk_abc123/go"),
-            Some("wrk_abc123".into())
-        );
-        assert_eq!(normalize_workspace_id("wrk_"), None);
-        assert_eq!(normalize_workspace_id("nope"), None);
-        assert_eq!(normalize_workspace_id(""), None);
+    fn test_clean_api_key() {
+        assert_eq!(clean_api_key("  abc123  "), Some("abc123".into()));
+        assert_eq!(clean_api_key("Bearer abc123"), Some("abc123".into()));
+        assert_eq!(clean_api_key("bearer abc123  "), Some("abc123".into()));
+        assert_eq!(clean_api_key("   "), None);
+        assert_eq!(clean_api_key(""), None);
     }
 
     #[test]
-    fn test_add_workspace() {
-        let v = add_workspace(&[], "wrk_a", None).unwrap();
-        assert_eq!(v, vec!["wrk_a"]);
-        let v = add_workspace(&v, "https://opencode.ai/workspace/wrk_b/go", None).unwrap();
-        assert_eq!(v, vec!["wrk_a", "wrk_b"]);
-        // Duplicate without changes is rejected.
-        let err = add_workspace(&v, "wrk_a", None).unwrap_err();
-        assert!(err.to_string().contains("already configured"));
-        assert!(add_workspace(&v, "not-a-workspace", None).is_err());
-    }
-
-    #[test]
-    fn test_add_workspace_with_name() {
-        let v = add_workspace(&[], "wrk_a", Some("Production")).unwrap();
-        assert_eq!(v, vec!["wrk_a=Production"]);
-        // Re-adding with a new name updates it.
-        let v = add_workspace(&v, "wrk_a", Some("Staging")).unwrap();
-        assert_eq!(v, vec!["wrk_a=Staging"]);
-        // Re-adding without a name is rejected because it would not change anything.
-        let err = add_workspace(&v, "wrk_a", None).unwrap_err();
-        assert!(err.to_string().contains("already configured"));
-        // Re-adding with the same name is also rejected.
-        let err = add_workspace(&v, "wrk_a", Some("Staging")).unwrap_err();
-        assert!(err.to_string().contains("already configured"));
-    }
-
-    #[test]
-    fn test_add_workspace_rejects_comma_in_name() {
-        let err = add_workspace(&[], "wrk_a", Some("Client, Production")).unwrap_err();
-        assert!(err.to_string().contains("cannot contain comma"));
-
-        let err = add_workspace(&[], "wrk_a=Client, Production", None).unwrap_err();
-        assert!(err.to_string().contains("cannot contain comma"));
-    }
-
-    #[test]
-    fn test_add_workspace_deduplicates_existing_config() {
-        let list = vec![
-            "wrk_a".to_string(),
-            "wrk_a=Production".to_string(),
-            "wrk_b=Old".to_string(),
-            "wrk_b=New".to_string(),
-        ];
-
-        let v = add_workspace(&list, "wrk_c", None).unwrap();
-        assert_eq!(v, vec!["wrk_a=Production", "wrk_b=New", "wrk_c"]);
-    }
-
-    #[test]
-    fn test_parse_workspace_entry() {
-        assert_eq!(
-            parse_workspace_entry("wrk_a=Prod"),
-            Some(WorkspaceRef {
-                id: "wrk_a".into(),
-                name: Some("Prod".into())
-            })
-        );
-        assert_eq!(
-            parse_workspace_entry("wrk_a"),
-            Some(WorkspaceRef {
-                id: "wrk_a".into(),
-                name: None
-            })
-        );
-        assert_eq!(
-            parse_workspace_entry("https://opencode.ai/workspace/wrk_a/go=My Team"),
-            Some(WorkspaceRef {
-                id: "wrk_a".into(),
-                name: Some("My Team".into())
-            })
-        );
-        assert_eq!(parse_workspace_entry("garbage"), None);
-    }
-
-    #[test]
-    fn test_remove_workspace() {
-        let list = vec!["wrk_a".to_string(), "wrk_b".to_string()];
-        assert_eq!(remove_workspace(&list, "wrk_a").unwrap(), vec!["wrk_b"]);
-        assert!(remove_workspace(&list[..1], "wrk_a").unwrap().is_empty());
-        let err = remove_workspace(&list, "wrk_other").unwrap_err();
-        assert!(err.to_string().contains("not configured"));
-        // Invalid reference is an error, not a silent wipe.
-        assert!(remove_workspace(&list, "garbage").is_err());
-    }
-
-    #[test]
-    fn test_remove_workspace_deduplicates_remaining_config() {
-        let list = vec![
-            "wrk_a".to_string(),
-            "wrk_b".to_string(),
-            "wrk_b=Production".to_string(),
-            "wrk_c".to_string(),
-            "wrk_c".to_string(),
-        ];
-
-        let v = remove_workspace(&list, "wrk_a").unwrap();
-        assert_eq!(v, vec!["wrk_b=Production", "wrk_c"]);
-    }
-
-    #[test]
-    fn test_parse_discovered_workspaces() {
-        let payload = r#"{"workspaces":[{"id":"wrk_aaa1","name":"Production"},{"id":"wrk_bbb2"},{"id":"wrk_aaa1"}]}"#;
-        let refs = parse_discovered_workspaces(payload);
-        assert_eq!(refs.len(), 2);
-        assert_eq!(refs[0].id, "wrk_aaa1");
-        assert_eq!(refs[0].name.as_deref(), Some("Production"));
-        assert_eq!(refs[1].id, "wrk_bbb2");
-        assert_eq!(refs[1].name, None);
-        assert!(parse_discovered_workspaces("no ids here").is_empty());
-    }
-
-    #[test]
-    fn test_parse_discovered_workspaces_hydration_payload() {
-        // Unquoted-key hydration format used by the dashboard's JS payload.
-        let payload =
-            r#"($R=>$R[0]=[$R[1]={id:"wrk_01K6AR1ZET89H8NB691FQ2C2VB",name:"Default",slug:null}])"#;
-        let refs = parse_discovered_workspaces(payload);
-        assert_eq!(refs.len(), 1);
-        assert_eq!(refs[0].id, "wrk_01K6AR1ZET89H8NB691FQ2C2VB");
-        assert_eq!(refs[0].name.as_deref(), Some("Default"));
-    }
-
-    #[test]
-    fn test_parse_window_percent_and_reset() {
-        let page = dashboard_page(42.5, 80.0, Some(12.0));
-        let rolling = parse_window(&page, "rollingUsage").unwrap();
-        assert_eq!(rolling.percent, 42.5);
-        assert_eq!(rolling.reset_in_sec, 3600);
-
-        let weekly = parse_window(&page, "weeklyUsage").unwrap();
-        assert_eq!(weekly.percent, 80.0);
-
-        let monthly = parse_window(&page, "monthlyUsage").unwrap();
-        assert_eq!(monthly.percent, 12.0);
-    }
-
-    #[test]
-    fn test_parse_window_skips_scalar_billing_usage() {
-        let page = r#"
-            billing:{monthlyUsage:null,timeMonthlyUsageUpdated:null}
-            workspace:{monthlyUsage:{status:"ok",resetInSec:72652,usagePercent:99}}
-        "#;
-
-        let monthly = parse_window(page, "monthlyUsage").unwrap();
-        assert_eq!(monthly.percent, 99.0);
-        assert_eq!(monthly.reset_in_sec, 72652);
-    }
-
-    #[test]
-    fn test_parse_window_fractional_percent_not_scaled() {
-        // The dashboard reports percentages directly, with decimal places:
-        // 0.7 means 0.7%, not 70% — it must not be scaled by 100.
-        let page = "rollingUsage:{usagePercent:0.7,resetInSec:60}";
-        let w = parse_window(page, "rollingUsage").unwrap();
-        assert!((w.percent - 0.7).abs() < 1e-9);
-
-        let page = "rollingUsage:{usagePercent:0.42,resetInSec:60}";
-        let w = parse_window(page, "rollingUsage").unwrap();
-        assert!((w.percent - 0.42).abs() < 1e-9);
-    }
-
-    #[test]
-    fn test_parse_window_clamps_over_100() {
-        let page = "rollingUsage:{usagePercent:140,resetInSec:60}";
-        let w = parse_window(page, "rollingUsage").unwrap();
-        assert_eq!(w.percent, 100.0);
-    }
-
-    #[test]
-    fn test_parse_workspace_page_missing_fields() {
-        let ws = WorkspaceRef {
-            id: "wrk_x".into(),
-            name: None,
-        };
-        let result = parse_workspace_page(&ws, "<html>nothing here</html>");
-        assert!(matches!(result, Err(SpendPanelError::ParseError(_, _))));
-    }
-
-    #[test]
-    fn test_looks_signed_out() {
-        assert!(OpenCodeGoProvider::looks_signed_out(
-            "<a href=\"/auth/authorize\">Sign in</a>"
-        ));
-        assert!(OpenCodeGoProvider::looks_signed_out(
-            r#"actor of type "public""#
-        ));
-        assert!(!OpenCodeGoProvider::looks_signed_out(
-            "rollingUsage:{usagePercent:1}"
-        ));
-    }
-
-    #[test]
-    fn test_resolve_cookie_missing() {
-        let ctx = ProviderContext::new();
-        assert!(matches!(
-            OpenCodeGoProvider::resolve_cookie(&ctx),
-            Err(SpendPanelError::AuthFailed(_, _))
-        ));
-    }
-
-    #[test]
-    fn test_resolve_cookie_token_field_preferred() {
+    fn test_resolve_api_key_token_field_preferred() {
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("token".into(), "session=token".into());
-        ctx.config.insert("cookie".into(), "session=alias".into());
+        ctx.config.insert("token".into(), "key-token".into());
+        ctx.config.insert("api_key".into(), "key-alias".into());
         assert_eq!(
-            OpenCodeGoProvider::resolve_cookie(&ctx).unwrap(),
-            "session=token"
+            OpenCodeGoProvider::resolve_api_key(&ctx).unwrap(),
+            "key-token"
         );
 
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=alias".into());
+        ctx.config.insert("api_key".into(), "key-alias".into());
         assert_eq!(
-            OpenCodeGoProvider::resolve_cookie(&ctx).unwrap(),
-            "session=alias"
+            OpenCodeGoProvider::resolve_api_key(&ctx).unwrap(),
+            "key-alias"
         );
     }
 
     #[test]
-    fn test_normalize_cookie_header_accepts_full_cookie_header() {
+    fn test_looks_like_cookie() {
+        for raw in [
+            "auth=Fe26.abc123",
+            "Fe26.abc123",
+            "Cookie: auth=Fe26.abc; other=1",
+            "cookie: auth=x",
+            "a=b; c=d",
+            "  auth=Fe26.abc  ",
+        ] {
+            assert!(looks_like_cookie(raw), "should detect {raw}");
+        }
+        for raw in [
+            "sk-opengo-abc123",
+            "oc_sk_live_abc123",
+            "Bearer sk-opengo-abc123",
+            "abc123==", // base64 padding alone is not a cookie
+            "plain-key-without-separators",
+        ] {
+            assert!(!looks_like_cookie(raw), "should accept {raw}");
+        }
+    }
+
+    #[test]
+    fn test_resolve_api_key_skips_legacy_cookie_for_valid_alias() {
+        // A stale cookie in `token` is skipped; the `api_key` alias still wins.
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("token".into(), "auth=Fe26.stale".into());
+        ctx.config.insert("api_key".into(), "live-key".into());
         assert_eq!(
-            normalize_cookie_header("auth=Fe26.2**abc; other=value"),
-            "auth=Fe26.2**abc; other=value"
+            OpenCodeGoProvider::resolve_api_key(&ctx).unwrap(),
+            "live-key"
         );
     }
 
     #[test]
-    fn test_normalize_cookie_header_strips_cookie_prefix() {
+    fn test_has_key_value_trims_whitespace() {
+        use std::ffi::OsStr;
+        assert!(has_key_value(OsStr::new("k")));
+        assert!(!has_key_value(OsStr::new("   ")));
+        assert!(!has_key_value(OsStr::new("")));
+    }
+
+    #[test]
+    fn test_resolve_api_key_strips_bearer_prefix() {
+        let mut ctx = ProviderContext::new();
+        ctx.config
+            .insert("token".into(), "Bearer pasted-key".into());
         assert_eq!(
-            normalize_cookie_header("Cookie: auth=Fe26.2**abc; other=value"),
-            "auth=Fe26.2**abc; other=value"
-        );
-        assert_eq!(
-            normalize_cookie_header("cookie: auth=Fe26.2**abc"),
-            "auth=Fe26.2**abc"
+            OpenCodeGoProvider::resolve_api_key(&ctx).unwrap(),
+            "pasted-key"
         );
     }
 
     #[test]
-    fn test_normalize_cookie_header_prefixes_bare_auth_value() {
-        assert_eq!(normalize_cookie_header("Fe26.2**abc"), "auth=Fe26.2**abc");
+    fn test_parse_window_ok() {
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"status":"ok","percent":42.5,"resetsAt":"2026-09-23T00:00:00.000Z"}"#,
+        )
+        .unwrap();
+        let w = parse_window(Some(&v)).unwrap();
+        assert!((w.percent - 42.5).abs() < 1e-9);
+        assert!(!w.limited);
+        assert!(w.resets_at.is_some());
+    }
+
+    #[test]
+    fn test_parse_window_rate_limited() {
+        let v: serde_json::Value = serde_json::from_str(
+            r#"{"status":"rate-limited","percent":100,"resetsAt":"2026-09-23T00:00:00Z"}"#,
+        )
+        .unwrap();
+        let w = parse_window(Some(&v)).unwrap();
+        assert!(w.limited);
+    }
+
+    #[test]
+    fn test_parse_window_rejects_malformed() {
+        assert!(parse_window(None).is_none());
+        for raw in [
+            r#"{"status":"ok","percent":140,"resetsAt":"2026-09-23T00:00:00Z"}"#,
+            r#"{"status":"ok","percent":-1,"resetsAt":"2026-09-23T00:00:00Z"}"#,
+            r#"{"status":"weird","percent":10,"resetsAt":"2026-09-23T00:00:00Z"}"#,
+            r#"{"status":"ok","resetsAt":"2026-09-23T00:00:00Z"}"#,
+            r#"{"status":"ok","percent":10}"#,
+        ] {
+            // Missing resetsAt is fine (reset time unknown); everything else
+            // must be rejected.
+            let v: serde_json::Value = serde_json::from_str(raw).unwrap();
+            let parsed = parse_window(Some(&v));
+            if raw.contains("\"percent\":140")
+                || raw.contains("\"percent\":-1")
+                || raw.contains("\"status\":\"weird\"")
+                || !raw.contains("percent")
+            {
+                assert!(parsed.is_none(), "should reject {raw}");
+            } else {
+                assert!(parsed.is_some(), "should accept {raw}");
+            }
+        }
+    }
+
+    #[test]
+    fn test_server_error_message() {
+        assert_eq!(
+            server_error_message(r#"{"error":{"message":"EntitlementError"}}"#).as_deref(),
+            Some("EntitlementError")
+        );
+        assert_eq!(
+            server_error_message(r#"{"error":"boom"}"#).as_deref(),
+            Some("boom")
+        );
+        assert!(server_error_message(r#"{"ok":true}"#).is_none());
+        assert!(server_error_message("not json").is_none());
     }
 
     #[test]
     fn test_provider_metadata() {
         let p = OpenCodeGoProvider::new();
         assert_eq!(p.metadata().id, "opencode-go");
-        assert!(!p.detect_credentials());
+        assert!(p.metadata().auth_methods.contains(&"api_key"));
     }
 
     #[tokio::test]
-    async fn test_fetch_with_configured_workspaces() {
+    async fn test_fetch_maps_windows() {
         let server = MockServer::start().await;
-
         Mock::given(method("GET"))
-            .and(path("/workspace/wrk_one/go"))
-            .and(header("cookie", "session=abc"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_string(dashboard_page(10.0, 50.0, None)),
-            )
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/workspace/wrk_two/go"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(dashboard_page(
-                95.0,
-                99.0,
-                Some(40.0),
+            .and(path("/zen/go/v1/usage"))
+            .and(header("Authorization", "Bearer test-key"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(usage_payload(
+                &window("ok", 10.0, "2026-09-23T05:00:00.000Z"),
+                &window("ok", 50.0, "2026-09-29T00:00:00.000Z"),
+                Some(&window("ok", 5.0, "2026-10-23T00:00:00.000Z")),
             )))
             .mount(&server)
             .await;
 
         let provider = OpenCodeGoProvider::with_base_url(&server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=abc".into());
-        ctx.config
-            .insert("workspaces".into(), "wrk_one, wrk_two".into());
+        ctx.config.insert("token".into(), "test-key".into());
 
         let snap = provider.fetch_usage(&ctx).await.unwrap();
         assert_eq!(snap.provider_id, "opencode-go");
 
         let primary = snap.primary_rate_window.unwrap();
-        assert!((primary.usage_ratio - 0.10).abs() < 1e-9);
+        assert_eq!(primary.label, "Rolling (5h)");
         assert_eq!(primary.window_minutes, 300);
-        assert!(snap.tertiary_rate_window.is_none()); // first ws has no monthly
+        assert!((primary.usage_ratio - 0.10).abs() < 1e-9);
+        assert_eq!(primary.status, RateWindowStatus::Normal);
 
-        // Second workspace → extra windows (rolling, weekly, monthly).
-        assert_eq!(snap.extra_rate_windows.len(), 3);
-        assert_eq!(snap.extra_rate_windows[0].id, "wrk_two-rolling");
-        assert_eq!(snap.extra_rate_windows[2].id, "wrk_two-monthly");
-        assert_eq!(snap.extra_rate_windows[2].label, "wrk_two Monthly");
+        let secondary = snap.secondary_rate_window.unwrap();
+        assert_eq!(secondary.label, "Weekly");
+        assert!((secondary.usage_ratio - 0.50).abs() < 1e-9);
+
+        let tertiary = snap.tertiary_rate_window.unwrap();
+        assert_eq!(tertiary.label, "Monthly");
+        assert!((tertiary.usage_ratio - 0.05).abs() < 1e-9);
+        assert!(snap.extra_rate_windows.is_empty());
+    }
+
+    #[tokio::test]
+    async fn test_fetch_without_monthly() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/zen/go/v1/usage"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(usage_payload(
+                &window("ok", 20.0, "2026-09-23T05:00:00.000Z"),
+                &window("ok", 95.0, "2026-09-29T00:00:00.000Z"),
+                None,
+            )))
+            .mount(&server)
+            .await;
+
+        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("api_key".into(), "k".into());
+
+        let snap = provider.fetch_usage(&ctx).await.unwrap();
+        assert!(snap.tertiary_rate_window.is_none());
         assert_eq!(
-            snap.extra_rate_windows[1].window.status,
+            snap.secondary_rate_window.unwrap().status,
             RateWindowStatus::Critical
         );
     }
 
     #[tokio::test]
-    async fn test_fetch_discovers_workspaces() {
+    async fn test_fetch_rate_limited_window_is_exhausted() {
         let server = MockServer::start().await;
-
         Mock::given(method("GET"))
-            .and(path("/_server"))
-            .and(header("x-server-id", WORKSPACES_SERVER_ID))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_string(r#"[{"id":"wrk_disc","slug":"main"}]"#),
-            )
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/workspace/wrk_disc/go"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(dashboard_page(
-                30.0,
-                60.0,
-                Some(5.0),
+            .and(path("/zen/go/v1/usage"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(usage_payload(
+                &window("rate-limited", 67.0, "2026-09-23T05:00:00.000Z"),
+                &window("ok", 10.0, "2026-09-29T00:00:00.000Z"),
+                None,
             )))
             .mount(&server)
             .await;
 
         let provider = OpenCodeGoProvider::with_base_url(&server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=abc".into());
-
-        let snap = provider.fetch_usage(&ctx).await.unwrap();
-        assert!((snap.primary_rate_window.unwrap().usage_ratio - 0.30).abs() < 1e-9);
-        assert!(snap.tertiary_rate_window.is_some());
-        assert!(snap.extra_rate_windows.is_empty());
-    }
-
-    #[tokio::test]
-    async fn test_discovered_names_label_windows() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/_server"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                r#"[{"id":"wrk_one","name":"Production"},{"id":"wrk_two","name":"Staging"}]"#,
-            ))
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/workspace/wrk_one/go"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_string(dashboard_page(10.0, 50.0, None)),
-            )
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/workspace/wrk_two/go"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_string(dashboard_page(20.0, 60.0, None)),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
-        let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=abc".into());
+        ctx.config.insert("token".into(), "k".into());
 
         let snap = provider.fetch_usage(&ctx).await.unwrap();
         assert_eq!(
-            snap.primary_rate_window.unwrap().label,
-            "Production Rolling (5h)"
-        );
-        assert_eq!(snap.extra_rate_windows[0].label, "Staging Rolling (5h)");
-    }
-
-    #[tokio::test]
-    async fn test_fetch_fractional_percent_not_scaled() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/workspace/wrk_x/go"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(dashboard_page(
-                0.7,
-                12.3,
-                Some(0.5),
-            )))
-            .mount(&server)
-            .await;
-
-        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
-        let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=abc".into());
-        ctx.config.insert("workspaces".into(), "wrk_x".into());
-
-        let snap = provider.fetch_usage(&ctx).await.unwrap();
-        let primary = snap.primary_rate_window.unwrap();
-        // 0.7% must map to 0.007, not 0.7 (70%).
-        assert!((primary.usage_ratio - 0.007).abs() < 1e-9);
-        let secondary = snap.secondary_rate_window.unwrap();
-        assert!((secondary.usage_ratio - 0.123).abs() < 1e-9);
-        let tertiary = snap.tertiary_rate_window.unwrap();
-        assert!((tertiary.usage_ratio - 0.005).abs() < 1e-9);
-    }
-
-    #[tokio::test]
-    async fn test_pinned_ids_enriched_with_discovered_names() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/_server"))
-            .respond_with(ResponseTemplate::new(200).set_body_string(
-                r#"[{"id":"wrk_one","name":"Production"},{"id":"wrk_two","name":"Staging"}]"#,
-            ))
-            .mount(&server)
-            .await;
-        for ws in ["wrk_one", "wrk_two"] {
-            Mock::given(method("GET"))
-                .and(path(format!("/workspace/{}/go", ws)))
-                .respond_with(
-                    ResponseTemplate::new(200).set_body_string(dashboard_page(10.0, 50.0, None)),
-                )
-                .mount(&server)
-                .await;
-        }
-
-        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
-        let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=abc".into());
-        // wrk_one pinned without a name (enriched from discovery);
-        // wrk_two has a manual name, which wins over the discovered one.
-        ctx.config
-            .insert("workspaces".into(), "wrk_one,wrk_two=Manual".into());
-
-        let snap = provider.fetch_usage(&ctx).await.unwrap();
-        assert_eq!(
-            snap.primary_rate_window.unwrap().label,
-            "Production Rolling (5h)"
-        );
-        assert_eq!(snap.extra_rate_windows[0].label, "Manual Rolling (5h)");
-    }
-
-    #[tokio::test]
-    async fn test_pinned_ids_work_when_discovery_fails() {
-        let server = MockServer::start().await;
-
-        Mock::given(method("GET"))
-            .and(path("/_server"))
-            .respond_with(ResponseTemplate::new(500))
-            .mount(&server)
-            .await;
-        Mock::given(method("GET"))
-            .and(path("/workspace/wrk_one/go"))
-            .respond_with(
-                ResponseTemplate::new(200).set_body_string(dashboard_page(10.0, 50.0, None)),
-            )
-            .mount(&server)
-            .await;
-
-        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
-        let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=abc".into());
-        ctx.config.insert("workspaces".into(), "wrk_one".into());
-
-        // Name enrichment is best-effort; a broken discovery endpoint must
-        // not break pinned workspaces.
-        let snap = provider.fetch_usage(&ctx).await.unwrap();
-        assert_eq!(
-            snap.primary_rate_window.unwrap().label,
-            "wrk_one Rolling (5h)"
+            snap.primary_rate_window.unwrap().status,
+            RateWindowStatus::Exhausted
         );
     }
 
     #[tokio::test]
-    async fn test_signed_out_page_is_auth_error() {
+    async fn test_fetch_401_is_auth_failed() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/workspace/wrk_x/go"))
-            .respond_with(ResponseTemplate::new(200).set_body_string("<html>Please sign in</html>"))
+            .and(path("/zen/go/v1/usage"))
+            .respond_with(ResponseTemplate::new(401))
             .mount(&server)
             .await;
 
         let provider = OpenCodeGoProvider::with_base_url(&server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "stale=1".into());
-        ctx.config.insert("workspaces".into(), "wrk_x".into());
+        ctx.config.insert("token".into(), "bad".into());
 
-        let result = provider.fetch_usage(&ctx).await;
-        assert!(matches!(result, Err(SpendPanelError::AuthFailed(_, _))));
+        let err = provider.fetch_usage(&ctx).await.unwrap_err();
+        assert!(matches!(err, SpendPanelError::AuthFailed(_, _)));
+        assert!(err.to_string().contains("401"));
     }
 
     #[tokio::test]
-    async fn test_partial_workspace_failure_keeps_successes() {
+    async fn test_fetch_403_includes_server_message() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/workspace/wrk_ok/go"))
+            .and(path("/zen/go/v1/usage"))
             .respond_with(
-                ResponseTemplate::new(200).set_body_string(dashboard_page(20.0, 40.0, None)),
+                ResponseTemplate::new(403)
+                    .set_body_string(r#"{"error":{"message":"EntitlementError"}}"#),
             )
             .mount(&server)
             .await;
+
+        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("token".into(), "no-sub".into());
+
+        let err = provider.fetch_usage(&ctx).await.unwrap_err();
+        assert!(matches!(err, SpendPanelError::AuthFailed(_, _)));
+        assert!(err.to_string().contains("EntitlementError"));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_missing_windows_is_parse_error() {
+        let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/workspace/wrk_broken/go"))
+            .and(path("/zen/go/v1/usage"))
+            .respond_with(ResponseTemplate::new(200).set_body_string(r#"{"usage":{}}"#))
+            .mount(&server)
+            .await;
+
+        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("token".into(), "k".into());
+
+        let err = provider.fetch_usage(&ctx).await.unwrap_err();
+        assert!(matches!(err, SpendPanelError::ParseError(_, _)));
+    }
+
+    #[tokio::test]
+    async fn test_fetch_server_error() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/zen/go/v1/usage"))
             .respond_with(ResponseTemplate::new(500))
             .mount(&server)
             .await;
 
         let provider = OpenCodeGoProvider::with_base_url(&server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=abc".into());
-        ctx.config
-            .insert("workspaces".into(), "wrk_ok,wrk_broken".into());
+        ctx.config.insert("token".into(), "k".into());
 
-        let snap = provider.fetch_usage(&ctx).await.unwrap();
-        assert!(snap.primary_rate_window.is_some());
-        assert!(snap.extra_rate_windows.is_empty());
+        let err = provider.fetch_usage(&ctx).await.unwrap_err();
+        assert!(matches!(err, SpendPanelError::ProviderError(_, _)));
     }
 
     #[tokio::test]
-    async fn test_all_workspaces_fail_returns_error() {
+    async fn test_fetch_429_is_rate_limited_with_retry_after() {
         let server = MockServer::start().await;
         Mock::given(method("GET"))
-            .and(path("/workspace/wrk_a/go"))
-            .respond_with(ResponseTemplate::new(500))
+            .and(path("/zen/go/v1/usage"))
+            .respond_with(ResponseTemplate::new(429).insert_header("retry-after", "120"))
             .mount(&server)
             .await;
 
         let provider = OpenCodeGoProvider::with_base_url(&server.uri());
         let mut ctx = ProviderContext::new();
-        ctx.config.insert("cookie".into(), "session=abc".into());
-        ctx.config.insert("workspaces".into(), "wrk_a".into());
+        ctx.config.insert("token".into(), "k".into());
 
-        let result = provider.fetch_usage(&ctx).await;
-        assert!(matches!(result, Err(SpendPanelError::ProviderError(_, _))));
+        let err = provider.fetch_usage(&ctx).await.unwrap_err();
+        assert!(
+            matches!(err, SpendPanelError::RateLimited(_, Some(120))),
+            "got: {err}"
+        );
+    }
+
+    #[tokio::test]
+    async fn test_fetch_429_without_retry_after() {
+        let server = MockServer::start().await;
+        Mock::given(method("GET"))
+            .and(path("/zen/go/v1/usage"))
+            .respond_with(ResponseTemplate::new(429))
+            .mount(&server)
+            .await;
+
+        let provider = OpenCodeGoProvider::with_base_url(&server.uri());
+        let mut ctx = ProviderContext::new();
+        ctx.config.insert("token".into(), "k".into());
+
+        let err = provider.fetch_usage(&ctx).await.unwrap_err();
+        assert!(
+            matches!(err, SpendPanelError::RateLimited(_, None)),
+            "got: {err}"
+        );
     }
 }

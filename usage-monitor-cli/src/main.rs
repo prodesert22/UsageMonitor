@@ -65,7 +65,6 @@ async fn main() -> Result<()> {
                 "opencode-go",
                 cli::ProviderCmd::Account(acmd),
             )?,
-            OpencodeGoCmd::Workspace(cmd) => commands::handle_workspace(config, cmd)?,
         },
         Command::Claude(cmd) => commands::handle_provider_cmd(&registry, config, "claude", cmd)?,
         Command::Codex(cmd) => commands::handle_provider_cmd(&registry, config, "codex", cmd)?,
@@ -73,6 +72,7 @@ async fn main() -> Result<()> {
             commands::handle_provider_cmd(&registry, config, "anthropic", cmd)?
         }
         Command::OpenAI(cmd) => commands::handle_provider_cmd(&registry, config, "openai", cmd)?,
+        Command::Gemini(cmd) => commands::handle_gemini_cmd(&registry, config, cmd).await?,
         Command::Fetch {
             provider,
             account,

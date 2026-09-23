@@ -163,8 +163,7 @@ What it shows — the same layout as the KDE Plasma widget:
     when a provider has several logins), the Session/Weekly/Monthly windows
     shown in the header text, clear cache;
   - **Providers** — enable/disable, add/remove named accounts (with the same
-    per-provider credential fields and setup hints as the Plasma widget) and
-    opencode-go workspaces;
+    per-provider credential fields and setup hints as the Plasma widget);
   - **Order** — reorder the provider cards;
   - **Theme** — follow the desktop colors, a bundled theme, an installed KDE
     color scheme, or a custom palette, plus the transparency slider and a live

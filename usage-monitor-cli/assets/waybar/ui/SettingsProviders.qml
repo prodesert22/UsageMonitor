@@ -2,10 +2,9 @@ import QtQuick
 import QtQuick.Controls as QQC2
 import QtQuick.Layouts
 
-// Plasma's configProviders page: enable/disable providers, manage named accounts
-// and opencode-go workspaces. These act on the CLI immediately (they are not
-// state.json keys), so they are not part of the pending/Apply cycle — same as in
-// Plasma.
+// Plasma's configProviders page: enable/disable providers and manage named
+// accounts. These act on the CLI immediately (they are not state.json keys),
+// so they are not part of the pending/Apply cycle — same as in Plasma.
 QQC2.ScrollView {
     id: page
 
@@ -95,8 +94,6 @@ QQC2.ScrollView {
                 property string newName: ""
                 property string newLabel: ""
                 property var newFields: ({})
-                property string newWsId: ""
-                property string newWsName: ""
                 Layout.fillWidth: true
                 Layout.leftMargin: page.ui ? page.ui.largeSpacing : 8
                 Layout.rightMargin: page.ui ? page.ui.largeSpacing : 8
@@ -258,78 +255,6 @@ QQC2.ScrollView {
                             providerRow.newName.trim(),
                             providerRow.newLabel.trim(),
                             JSON.stringify(providerRow.newFields))
-                    }
-
-                    // ---- opencode-go workspaces ----
-                    ColumnLayout {
-                        visible: providerRow.modelData.authKind === "opencode"
-                        Layout.fillWidth: true
-                        Layout.topMargin: page.ui ? page.ui.smallSpacing : 4
-                        spacing: page.ui ? page.ui.smallSpacing : 4
-
-                        QQC2.Label {
-                            text: "Workspaces"
-                            font.bold: true
-                            opacity: 0.8
-                            font.pointSize: page.ui ? page.ui.smallFontSize : 9
-                            color: page.ui ? page.ui.textColor : "#f5f5f7"
-                        }
-
-                        Repeater {
-                            model: providerRow.modelData.workspaces || []
-                            delegate: RowLayout {
-                                required property var modelData
-                                Layout.fillWidth: true
-                                spacing: page.ui ? page.ui.smallSpacing : 4
-
-                                QQC2.Label {
-                                    Layout.fillWidth: true
-                                    text: "• " + modelData.id + (modelData.name ? " — " + modelData.name : "")
-                                    elide: Text.ElideRight
-                                    opacity: 0.8
-                                    font.pointSize: page.ui ? page.ui.smallFontSize : 9
-                                    color: page.ui ? page.ui.textColor : "#f5f5f7"
-                                }
-
-                                ThemedToolButton {
-                                    ui: page.ui
-                                    iconName: "remove"
-                                    text: "Remove"
-                                    tooltipText: "Remove workspace " + modelData.id
-                                    onClicked: backend.workspaceRemove(modelData.id)
-                                }
-                            }
-                        }
-
-                        QQC2.Label {
-                            visible: !(providerRow.modelData.workspaces && providerRow.modelData.workspaces.length)
-                            text: "No workspaces configured — auto-discovery is used."
-                            opacity: 0.65
-                            font.pointSize: page.ui ? page.ui.smallFontSize : 9
-                            color: page.ui ? page.ui.subtextColor : "#98989d"
-                        }
-
-                        QQC2.TextField {
-                            Layout.fillWidth: true
-                            placeholderText: "Workspace id (e.g. wrk_…)"
-                            selectByMouse: true
-                            text: providerRow.newWsId
-                            onTextChanged: providerRow.newWsId = text
-                        }
-
-                        QQC2.TextField {
-                            Layout.fillWidth: true
-                            placeholderText: "Workspace name (optional)"
-                            selectByMouse: true
-                            text: providerRow.newWsName
-                            onTextChanged: providerRow.newWsName = text
-                        }
-
-                        QQC2.Button {
-                            text: "Add workspace"
-                            enabled: providerRow.newWsId.trim().length > 0
-                            onClicked: backend.workspaceAdd(providerRow.newWsId.trim(), providerRow.newWsName.trim())
-                        }
                     }
                 }
 

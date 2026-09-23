@@ -62,7 +62,7 @@ CONNECT_HINTS = {
     "anthropic": "Set an API key: `usage-monitor-cli anthropic set api_key sk-…`.",
     "openai": "Set an API key: `usage-monitor-cli openai set api_key sk-…`.",
     "gemini": "Run `gcloud auth application-default login`, then refresh.",
-    "opencode-go": "Configure workspaces: `usage-monitor-cli opencode-go workspace add <id>`.",
+    "opencode-go": "Set an API key: `usage-monitor-cli opencode-go set token <key>` (auto-detected from ~/.local/share/opencode/auth.json).",
     "kimi": "Set a kimi-auth token: `usage-monitor-cli kimi set token <kimi-auth-jwt>`.",
 }
 
@@ -72,7 +72,6 @@ CONNECT_HINTS = {
 # authKind drives the form shape:
 #   api_key / token / cookie -> paste-a-secret form (name + the listed fields)
 #   oauth                    -> CLI-login required; show setupHint + path fields
-#   opencode                 -> token + workspace management
 # Each field: {key, label, secret, placeholder}.
 # --------------------------------------------------------------------------
 
@@ -126,8 +125,8 @@ PROVIDER_AUTH: dict[str, dict[str, Any]] = {
     "claude": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path", placeholder="~/.claude/.credentials.json")], "setupHint": _OAUTH_SETUP["claude"]},
     "gemini": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path"), _field("access_token", "Access token", secret=True)], "setupHint": _OAUTH_SETUP["gemini"]},
     "antigravity": {"kind": "oauth", "fields": [_field("credentials_path", "Credentials path"), _field("access_token", "Access token", secret=True)], "setupHint": _OAUTH_SETUP["antigravity"]},
-    # opencode-go: cookie token + workspace management
-    "opencode-go": {"kind": "opencode", "fields": [_field("token", "Session cookie", secret=True)]},
+    # opencode-go: API key (auto-detected from the desktop login file)
+    "opencode-go": {"kind": "token", "fields": [_field("token", "API key", secret=True)]},
 }
 
 _DEFAULT_AUTH = {"kind": "api_key", "fields": _API_KEY}
@@ -834,8 +833,8 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
     usage: dict[str, Any] = {}
     extras: list[dict[str, Any]] = []
     # Match windows to slots by id: the CLI appends named extra windows
-    # (e.g. Codex "Additional" rate limits, opencode-go workspaces) after the
-    # standard ones, and mapping positionally mislabels them as Monthly.
+    # (e.g. Codex "Additional" rate limits) after the standard ones, and
+    # mapping positionally mislabels them as Monthly.
     for window in [w for w in windows if isinstance(w, dict)]:
         wid = str(window.get("id") or "")
         slot = {
@@ -1242,20 +1241,6 @@ def account_text_for(accounts: list[dict[str, Any]]) -> str:
     return str(accounts[0].get("label") or accounts[0].get("id") or "") if accounts else ""
 
 
-def list_workspaces(account: str | None = None) -> list[dict[str, str]]:
-    cmd = ["opencode-go", "workspace", "list"]
-    if account:
-        cmd += ["--account", account]
-    workspaces: list[dict[str, str]] = []
-    for raw in cli_output(cmd).splitlines():
-        stripped = raw.strip()
-        if not stripped or stripped.startswith("("):
-            continue
-        parts = stripped.split(None, 1)
-        workspaces.append({"id": parts[0], "name": parts[1].strip() if len(parts) > 1 else ""})
-    return workspaces
-
-
 def _is_implicit_default(account: dict[str, Any]) -> bool:
     return account.get("id") == "default" and "auto-detected" in str(account.get("label") or "")
 
@@ -1294,17 +1279,15 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
     ids = [str(item["id"]) for item in items]
 
     # Each provider's accounts need a separate `<provider> show` call. Run them
-    # (plus the workspace list and version) concurrently — subprocess.run releases
-    # the GIL while waiting, so this collapses ~30 sequential spawns into one wave.
+    # (plus the version) concurrently — subprocess.run releases the GIL while
+    # waiting, so this collapses ~30 sequential spawns into one wave.
     with ThreadPoolExecutor(max_workers=16) as pool:
         accounts_iter = pool.map(parse_accounts, ids)
         version_future = pool.submit(cli_version)
         schemes_future = pool.submit(installed_schemes)
-        workspaces_future = pool.submit(list_workspaces) if "opencode-go" in ids else None
         accounts_by = dict(zip(ids, accounts_iter, strict=False))
         cli_ver = version_future.result()
         schemes = schemes_future.result()
-        workspaces = workspaces_future.result() if workspaces_future else []
 
     providers = []
     for item in items:
@@ -1328,8 +1311,6 @@ def settings_payload(state_path: Path | None = None) -> dict[str, Any]:
             "accountFields": auth["fields"],
             "setupHint": auth.get("setupHint", ""),
         }
-        if provider_id == "opencode-go":
-            entry["workspaces"] = workspaces
         providers.append(entry)
     pinnable = [
         target
@@ -1680,32 +1661,6 @@ def command_account_remove(args: argparse.Namespace) -> int:
     return 0
 
 
-def command_workspace_add(args: argparse.Namespace) -> int:
-    cmd = ["opencode-go", "workspace", "add", args.workspace]
-    if args.name:
-        cmd.append(args.name)
-    if args.account:
-        cmd += ["--account", args.account]
-    proc = run_cli(cmd)
-    if proc.returncode != 0:
-        print((proc.stderr or proc.stdout or "workspace add failed").strip(), file=sys.stderr)
-        return proc.returncode or 1
-    _dump(command_result(proc))
-    return 0
-
-
-def command_workspace_remove(args: argparse.Namespace) -> int:
-    cmd = ["opencode-go", "workspace", "remove", args.workspace]
-    if args.account:
-        cmd += ["--account", args.account]
-    proc = run_cli(cmd)
-    if proc.returncode != 0:
-        print((proc.stderr or proc.stdout or "workspace remove failed").strip(), file=sys.stderr)
-        return proc.returncode or 1
-    _dump(command_result(proc))
-    return 0
-
-
 def command_result(proc: subprocess.CompletedProcess[str]) -> dict[str, Any]:
     return {"status": "ok" if proc.returncode == 0 else "error", "stdout": proc.stdout, "stderr": proc.stderr}
 
@@ -1756,15 +1711,6 @@ def build_parser() -> argparse.ArgumentParser:
     account_remove.add_argument("--provider", required=True)
     account_remove.add_argument("--name", required=True)
     account_remove.set_defaults(func=command_account_remove)
-    workspace_add = sub.add_parser("workspace-add", help="Add an opencode-go workspace")
-    workspace_add.add_argument("--workspace", required=True)
-    workspace_add.add_argument("--name", default="")
-    workspace_add.add_argument("--account", default="")
-    workspace_add.set_defaults(func=command_workspace_add)
-    workspace_remove = sub.add_parser("workspace-remove", help="Remove an opencode-go workspace")
-    workspace_remove.add_argument("--workspace", required=True)
-    workspace_remove.add_argument("--account", default="")
-    workspace_remove.set_defaults(func=command_workspace_remove)
     return parser
 
 

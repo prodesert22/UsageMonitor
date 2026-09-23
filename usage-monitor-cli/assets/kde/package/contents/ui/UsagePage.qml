@@ -10,6 +10,12 @@ QQC2.ScrollView {
     Layout.fillHeight: true
     clip: true
 
+    // Only ever scrolls vertically: wrapping labels report an unwrapped
+    // implicitWidth wider than the popup, which made a horizontal scrollbar
+    // appear even when nothing overflowed.
+    QQC2.ScrollBar.horizontal.policy: QQC2.ScrollBar.AlwaysOff
+    QQC2.ScrollBar.vertical.policy: QQC2.ScrollBar.AsNeeded
+
     // The desktop style paints a sunken frame here, filled with the color
     // scheme's base color. That is opaque, so it covered the popup background —
     // both the themed palette and anything the transparency slider let through.

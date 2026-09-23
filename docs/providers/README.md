@@ -35,7 +35,7 @@ troubleshooting. For the general CLI and the multi-account model, see the
 | [`zai`](zai.md) | z.ai coding-plan quota | API key | When `Z_AI_API_KEY` is set |
 | [`grok`](grok.md) | Grok credit usage (gRPC-Web) | Bearer token or browser cookie | When `GROK_TOKEN`/`GROK_COOKIE` is set |
 | [`windsurf`](windsurf.md) | Windsurf daily/weekly quota (Connect proto) | Devin session token | When `WINDSURF_SESSION_TOKEN` is set |
-| [`opencode-go`](opencode-go.md) | OpenCode Go workspaces | Manual session cookie | Never (manual setup) |
+| [`opencode-go`](opencode-go.md) | OpenCode Go rolling/weekly/monthly quota | API key (auto-detected from the desktop login) | When `OPENCODE_API_KEY` is set or `~/.local/share/opencode/auth.json` holds an opencode-go key |
 
 Every provider above ships a real Linux fetcher. Auth and extraction were ported
 from the [CodexBar](https://github.com/steipete/CodexBar) macOS implementation; browser-cookie
@@ -63,10 +63,9 @@ concrete example.
 
 | Auth type | Providers | Strategy |
 |-----------|-----------|----------|
-| **API key** | `anthropic`, `openai`, `openrouter`, `deepseek`, `deepgram`, `elevenlabs`, `groq`, `llmproxy`, `moonshot`, `venice`, `kimik2`, `minimax`, `zai` | Keys don't rotate — just add another `account set api_key` |
+| **API key** | `anthropic`, `openai`, `openrouter`, `deepseek`, `deepgram`, `elevenlabs`, `groq`, `llmproxy`, `moonshot`, `venice`, `kimik2`, `minimax`, `zai`, `opencode-go` | Keys don't rotate — just add another `account set api_key` (or `account set token` for `opencode-go`) |
 | **Token / cookie** | `grok`, `kimi`, `copilot`, `windsurf`, `abacus`, `mistral`, `devin`, `cursor`, `perplexity`, `ollama` | Tokens/cookies don't rotate — just add another `account set token` or `account set cookie` |
 | **OAuth (credentials file)** | `claude`, `codex`, `gemini`, `antigravity` | Tokens **rotate** — each account needs its own live login in an isolated directory |
-| **Manual config** | `opencode-go` | Token doesn't rotate, but workspaces are per-account |
 
 ### API-key and token/cookie providers (most providers)
 
@@ -87,8 +86,7 @@ usage-monitor-cli fetch openai --account work
 ```
 
 The same pattern works for any API-key, token, or cookie provider — just
-replace `api_key` with `token` or `cookie` as needed. For `opencode-go`,
-remember workspaces are per account (pass `--account <name>` when adding one).
+replace `api_key` with `token` or `cookie` as needed.
 
 ### OAuth providers (Claude, Codex, Gemini, Antigravity)
 
