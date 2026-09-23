@@ -63,7 +63,11 @@ assets/                 Project artwork used by documentation/README
    `usage-monitor-cli/assets/kde/package/metadata.json`,
    `usage-monitor-cli/assets/kde/package/contents/code/usage_monitor_kde.py`,
    `usage-monitor-cli/assets/waybar/usage_monitor_waybar_data.py`
-   (`POPUP_VERSION`), `CHANGELOG.md`, and `releases/vX.Y.Z.md`.
+   (`POPUP_VERSION`), `CHANGELOG.md`, and `releases/vX.Y.Z.md`. Also refresh
+   the packaged changelog copy (`cp CHANGELOG.md usage-monitor-cli/CHANGELOG.md` —
+   `cargo publish` tarballs only ship the package directory, and the
+   `embedded_changelog_matches_workspace` test fails on drift). Delete stray
+   `__pycache__/` dirs before publishing: cargo's dirty check flags them.
 5. **Provider auth stays explicit and safe.** Never log secrets, tokens, cookies,
    API keys, OAuth credentials, or raw auth files. Tests must use mock data.
 6. **KDE icon rule.** The panel bar and popup header render the bundled project

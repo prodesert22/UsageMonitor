@@ -16,7 +16,10 @@ use super::install::{VERSION, read_stamp};
 use crate::cli::WidgetInstallTarget;
 
 const REPO: &str = "prodesert22/UsageMonitor";
-const CHANGELOG_MD: &str = include_str!("../../../CHANGELOG.md");
+// In-package copy of the workspace CHANGELOG (kept in sync by
+// `embedded_changelog_matches_workspace` below): `cargo publish` tarballs
+// only ship the package directory, so the workspace root is unreachable.
+const CHANGELOG_MD: &str = include_str!("../../CHANGELOG.md");
 
 /// Parse the numeric prefix of a `major.minor.patch…` version string.
 ///
@@ -248,6 +251,14 @@ pub(crate) async fn run_changelog(version: &str, pretty: bool) -> Result<()> {
 mod tests {
     use super::*;
     use std::cmp::Ordering;
+
+    #[test]
+    fn embedded_changelog_matches_workspace() {
+        // The packaged copy must mirror the workspace CHANGELOG (re-sync it
+        // on every release); otherwise the offline fallback drifts.
+        const WORKSPACE_MD: &str = include_str!("../../../CHANGELOG.md");
+        assert_eq!(CHANGELOG_MD, WORKSPACE_MD);
+    }
 
     #[test]
     fn parse_version_tolerates_prefixes_and_suffixes() {
