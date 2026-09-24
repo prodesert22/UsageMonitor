@@ -56,11 +56,17 @@ function readCache() {
 }
 
 function newPage(title, iconName) {
-    return new Adw.PreferencesPage({ title, icon_name: iconName });
+    const props = { title };
+    if (iconName !== undefined) props.icon_name = iconName;
+    return new Adw.PreferencesPage(props);
 }
 
 function newGroup(page, title, description) {
-    const group = new Adw.PreferencesGroup({ title, description });
+    // GJS rejects explicit `undefined` values in construct properties, so
+    // only pass `description` when the caller gave one.
+    const props = { title };
+    if (description !== undefined) props.description = description;
+    const group = new Adw.PreferencesGroup(props);
     page.add(group);
     return group;
 }
