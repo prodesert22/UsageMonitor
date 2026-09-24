@@ -245,7 +245,8 @@ class UsageMonitorIndicator extends PanelMenu.Button {
         hbox.add_child(spacer);
         for (const [label, cb] of [['Refresh', () => this.refresh()],
             ['Settings', () => this._ext.openPreferences()]]) {
-            const btn = new St.Button({ label, style_class: 'um-button' });
+            const btn = new St.Button({ style_class: 'um-button' });
+            btn.set_child(new St.Label({ text: label }));
             btn.connect('clicked', cb);
             hbox.add_child(btn);
         }
