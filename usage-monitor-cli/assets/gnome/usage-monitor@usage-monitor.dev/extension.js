@@ -232,8 +232,9 @@ class UsageMonitorIndicator extends PanelMenu.Button {
         const showDecimals = this._settings.get_boolean('show-decimals');
         const pct = this._pinnedPercent();
         this._label.set_text(showText ? pctLabel(pct, showDecimals) : '');
+        const stale = this._summary.class === 'stale' || this._summary._stale === true;
         this._label.style_class = `um-panel-text um-${levelFor(pct)}` +
-            (this._summary.class === 'stale' ? ' um-stale' : '');
+            (stale ? ' um-stale' : '');
     }
 
     _clearPopup() {
@@ -250,8 +251,10 @@ class UsageMonitorIndicator extends PanelMenu.Button {
         const hbox = new St.BoxLayout({ style_class: 'um-header' });
         const title = new St.BoxLayout({ vertical: true, style_class: 'um-title-box' });
         title.add_child(new St.Label({ text: 'Usage Monitor', style_class: 'um-title' }));
+        const staleSummary = this._summary &&
+            (this._summary.class === 'stale' || this._summary._stale === true);
         const sub = this._summary
-            ? `${this._summary.text}${this._summary.class === 'stale' ? ' · cached/stale' : ''}`
+            ? `${this._summary.text}${staleSummary ? ' · cached/stale' : ''}`
             : 'No provider data yet';
         title.add_child(new St.Label({ text: sub, style_class: 'um-subtitle' }));
         hbox.add_child(title);
@@ -299,8 +302,12 @@ class UsageMonitorIndicator extends PanelMenu.Button {
             this.menu.addMenuItem(banner);
         }
 
-        for (const entry of this._orderedProviders())
+        const providers = this._orderedProviders();
+        providers.forEach((entry, i) => {
+            if (i > 0)
+                this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
             this.menu.addMenuItem(this._providerItem(entry, showDecimals, showEmail));
+        });
 
         if (!(this._summary?.providers || []).length && !this._missingCli) {
             const empty = new PopupMenu.PopupBaseMenuItem({ reactive: false });
@@ -328,9 +335,16 @@ class UsageMonitorIndicator extends PanelMenu.Button {
             style_class: 'um-card-title',
             x_expand: true,
         });
+        // A failed entry with no window data has no meaningful headline:
+        // show an em-dash in error red instead of a misleading "0%".
+        const hasWindows = (entry.windows || []).some(w =>
+            w.percentage !== undefined && w.percentage !== null);
+        const errNoData = !!entry.error && !hasWindows;
         const pct = new St.Label({
-            text: pctLabel(entry.max_percentage || 0, showDecimals),
-            style_class: `um-card-pct um-${levelFor(entry.max_percentage || 0)}`,
+            text: errNoData ? '—' : pctLabel(entry.max_percentage || 0, showDecimals),
+            style_class: errNoData
+                ? 'um-card-pct um-card-error'
+                : `um-card-pct um-${levelFor(entry.max_percentage || 0)}`,
         });
         head.add_child(name);
         head.add_child(pct);
