@@ -85,6 +85,8 @@ class GnomePackagingTests(unittest.TestCase):
         self.assertIn("USAGE_MONITOR_BIN", js)
         self.assertIn("usage-monitor-cli not found", js,
                       "missing-CLI notice required for store installs")
+        self.assertIn("GObject.registerClass", js,
+                      "GObject subclasses must be registered or construction throws")
 
     def test_js_syntax_with_node_when_available(self):
         if shutil.which("node") is None:

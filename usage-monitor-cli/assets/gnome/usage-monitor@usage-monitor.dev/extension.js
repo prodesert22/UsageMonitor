@@ -12,6 +12,7 @@
 
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
+import GObject from 'gi://GObject';
 import St from 'gi://St';
 import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
@@ -105,9 +106,13 @@ async function spawnCli(argv) {
     return stdout;
 }
 
+// GObject subclasses must go through registerClass: instantiating a plain
+// JS subclass of a GObject class throws "Tried to construct an object
+// without a GType" (the ButtonBox/PanelMenuButton frames in the journal).
+const UsageMonitorIndicator = GObject.registerClass(
 class UsageMonitorIndicator extends PanelMenu.Button {
-    constructor(ext) {
-        super(0.0, 'Usage Monitor', false);
+    _init(ext) {
+        super._init(0.0, 'Usage Monitor', false);
         this._ext = ext;
         this._settings = ext.getSettings();
         this._cli = GLib.getenv('USAGE_MONITOR_BIN') || 'usage-monitor-cli';
@@ -370,7 +375,7 @@ class UsageMonitorIndicator extends PanelMenu.Button {
         }
         super.destroy();
     }
-}
+});
 
 export default class UsageMonitorExtension extends Extension {
     enable() {
