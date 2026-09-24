@@ -39,10 +39,16 @@ cannot restart the Shell in place. Remove it with
 `usage-monitor-cli widget uninstall gnome`, and inspect resolved paths with
 `usage-monitor-cli widget doctor`.
 
-If the CLI is not on `PATH`, set an absolute path:
+The extension looks for the CLI on the GNOME Shell `PATH`, then in
+`~/.cargo/bin/` and `~/.local/bin/`. For a different location, set
+`USAGE_MONITOR_BIN` to an absolute path in the GNOME Shell session environment
+before logging in. Setting it only in a terminal does not affect the running
+Shell.
+
+For example, in a session startup script:
 
 ```bash
-export USAGE_MONITOR_BIN="$HOME/.cargo/bin/usage-monitor-cli"
+export USAGE_MONITOR_BIN="$HOME/custom/bin/usage-monitor-cli"
 ```
 
 ## Install from extensions.gnome.org
@@ -95,12 +101,20 @@ usage-monitor-cli widget gnome
 `widget gnome` emits the same contract as `widget kde`/`widget waybar`
 (`text`, `tooltip`, `class`, `percentage`, `providers[]`, … — see
 [Widgets](README.md#cli-contract)).
+If an older installed CLI does not offer `widget gnome`, the extension
+automatically uses its `widget kde` command, which emits the same JSON.
 
 ## Troubleshooting
 
 - Panel shows `--`: the CLI is missing or no fetch succeeded yet — open the
   menu for the guided notice, or run `usage-monitor-cli widget gnome` in a
   terminal for the raw error.
+- Popup shows **Live usage unavailable**: run the widget command in a terminal
+  to see why a live fetch failed. The popup marks cached values as stale until
+  a live fetch succeeds; clear an old demo cache from Preferences → General →
+  Cached usage data if needed. If the installed CLI supports neither widget
+  command, reinstall it from this checkout with
+  `cargo install --path usage-monitor-cli --force`.
 - Extension installed but not loading: confirm the uuid is enabled
   (`gnome-extensions list --enabled`) and relog on Wayland.
 - Old UI after upgrade: `usage-monitor-cli widget install gnome` again, then

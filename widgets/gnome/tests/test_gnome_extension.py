@@ -81,7 +81,9 @@ class GnomePackagingTests(unittest.TestCase):
 
     def test_extension_spawns_widget_gnome(self):
         js = (_EXT_DIR / "extension.js").read_text()
-        self.assertIn("'widget', 'gnome'", js)
+        self.assertIn("this._widgetTarget = 'gnome'", js)
+        self.assertIn("'widget', 'kde'", js,
+                      "older CLIs must use the shared KDE widget JSON")
         self.assertIn("USAGE_MONITOR_BIN", js)
         self.assertIn("usage-monitor-cli not found", js,
                       "missing-CLI notice required for store installs")

@@ -7,14 +7,17 @@
 
 .um-panel-icon { icon-size: 16px; }
 
-.um-panel-text { font-weight: bold; }
+.um-panel-text { font-weight: bold; padding-top: 2px; }
 .um-panel-text.um-ok { color: #0a84ff; }
 .um-panel-text.um-warning { color: #ff9f0a; }
 .um-panel-text.um-critical { color: #ff453a; }
 .um-panel-text.um-stale { opacity: 0.65; }
 
+.um-popup { min-width: 400px; max-width: 400px; font-size: 0.9em; }
+
 .um-header { spacing: 8px; }
-.um-title { font-weight: bold; font-size: 1.1em; }
+.um-header-icon { icon-size: 20px; }
+.um-title { font-weight: bold; font-size: 1em; }
 .um-subtitle { opacity: 0.72; font-size: 0.9em; }
 
 .um-button {
@@ -26,7 +29,7 @@
 
 .um-warning-box { spacing: 4px; padding: 4px 0; }
 .um-warning-title { font-weight: bold; color: #ff9f0a; }
-.um-warning-body { opacity: 0.85; }
+.um-warning-body { opacity: 0.85; max-width: 360px; }
 
 .um-update-box { spacing: 4px; padding: 4px 0; }
 .um-update-text { color: #0a84ff; }
@@ -42,7 +45,7 @@
 .um-card-cost { opacity: 0.8; font-size: 0.9em; }
 .um-card-stale { opacity: 0.65; font-size: 0.9em; }
 .um-card-error { color: #ff453a; }
-.um-empty { opacity: 0.75; }
+.um-empty { opacity: 0.75; max-width: 360px; }
 
 .um-win-row { spacing: 8px; }
 .um-win-label { opacity: 0.9; }

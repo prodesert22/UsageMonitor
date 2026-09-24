@@ -1,15 +1,16 @@
 /* Usage Monitor GNOME Shell extension (GNOME 45+, ESM).
  *
  * Top-bar indicator backed by the `usage-monitor-cli` binary: it spawns
- * `usage-monitor-cli widget gnome` (the same stable widget JSON contract the
- * KDE and Waybar widgets consume), keeps the last-good payload as a stale
- * fallback, and renders one card per provider/account in the popup.
+ * `usage-monitor-cli widget gnome` (or `widget kde` with older binaries),
+ * keeps the last-good payload as a stale fallback, and renders one card per
+ * provider/account in the popup.
  *
  * When the CLI is missing (e.g. extension installed from extensions.gnome.org
  * without the binary), the panel shows "--" and the popup explains how to
  * install it instead of failing.
  */
 
+import Clutter from 'gi://Clutter';
 import Gio from 'gi://Gio';
 import GLib from 'gi://GLib';
 import GObject from 'gi://GObject';
@@ -20,7 +21,32 @@ import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
 const WINDOW_LABELS = { primary: 'Session', secondary: 'Weekly', tertiary: 'Monthly' };
-const BAR_WIDTH_PX = 220;
+
+function cliBin() {
+    const override = GLib.getenv('USAGE_MONITOR_BIN');
+    if (override) return override;
+    const onPath = GLib.find_program_in_path('usage-monitor-cli');
+    if (onPath) return onPath;
+    for (const path of [
+        GLib.build_filenamev([GLib.get_home_dir(), '.cargo', 'bin', 'usage-monitor-cli']),
+        GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'usage-monitor-cli']),
+    ]) {
+        if (GLib.file_test(path, GLib.FileTest.IS_EXECUTABLE)) return path;
+    }
+    return 'usage-monitor-cli';
+}
+
+function cliFailureHint(message) {
+    if (/not found|No such file|G_IO_ERROR_NOT_FOUND/i.test(message))
+        return 'usage-monitor-cli was not found. Install the CLI to load live usage.';
+    if (unsupportedGnomeCommand(message))
+        return 'The installed usage-monitor-cli is too old for the GNOME widget. Reinstall the CLI to load live usage.';
+    return 'Could not refresh usage. Check the CLI in a terminal, then refresh again.';
+}
+
+function unsupportedGnomeCommand(message) {
+    return /unrecognized subcommand.*gnome|unexpected argument.*gnome/i.test(message);
+}
 
 function levelFor(pct) {
     if (pct >= 90) return 'critical';
@@ -124,21 +150,32 @@ class UsageMonitorIndicator extends PanelMenu.Button {
         super._init(0.0, 'Usage Monitor', false);
         this._ext = ext;
         this._settings = ext.getSettings();
-        this._cli = GLib.getenv('USAGE_MONITOR_BIN') || 'usage-monitor-cli';
+        this._cli = cliBin();
+        this._widgetTarget = 'gnome';
         this._summary = null;
         this._busy = false;
         this._missingCli = false;
+        this._fetchError = '';
 
-        const box = new St.BoxLayout({ style_class: 'um-panel-box' });
+        const box = new St.BoxLayout({
+            style_class: 'um-panel-box',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         this._icon = new St.Icon({
             gicon: Gio.FileIcon.new(Gio.File.new_for_path(
                 GLib.build_filenamev([ext.path, 'icons', 'usage-monitor.png']))),
             style_class: 'um-panel-icon',
+            y_align: Clutter.ActorAlign.CENTER,
         });
-        this._label = new St.Label({ text: '--', style_class: 'um-panel-text' });
+        this._label = new St.Label({
+            text: '--',
+            style_class: 'um-panel-text',
+            y_align: Clutter.ActorAlign.CENTER,
+        });
         box.add_child(this._icon);
         box.add_child(this._label);
         this.add_child(box);
+        this.menu.box.add_style_class_name('um-popup');
 
         this._settingsChangedId = this._settings.connect('changed', () => {
             this._renderPanel();
@@ -171,17 +208,27 @@ class UsageMonitorIndicator extends PanelMenu.Button {
         this._busy = true;
         this._renderBusy();
         try {
-            const out = await spawnCli([this._cli, 'widget', 'gnome']);
+            let out;
+            try {
+                out = await spawnCli([this._cli, 'widget', this._widgetTarget]);
+            } catch (e) {
+                if (this._widgetTarget !== 'gnome' ||
+                    !unsupportedGnomeCommand(String(e && e.message || e))) throw e;
+                // The earlier CLI exposes the same widget JSON as `widget kde`.
+                out = await spawnCli([this._cli, 'widget', 'kde']);
+                this._widgetTarget = 'kde';
+            }
             const payload = JSON.parse(out);
             this._missingCli = false;
+            this._fetchError = '';
             this._summary = payload;
             writeCache(payload);
         } catch (e) {
             const message = String(e && e.message || e);
-            this._missingCli = /not found|No such file|G_IO_ERROR_NOT_FOUND/i.test(message) &&
-                !readCache();
-            if (!this._summary) this._summary = readCache();
-            this._lastError = message;
+            this._fetchError = cliFailureHint(message);
+            this._missingCli = /not found|No such file|G_IO_ERROR_NOT_FOUND/i.test(message);
+            this._summary = this._summary || readCache();
+            if (this._summary) this._summary._stale = true;
         } finally {
             this._busy = false;
             this._renderPanel();
@@ -248,7 +295,12 @@ class UsageMonitorIndicator extends PanelMenu.Button {
         const showEmail = this._settings.get_boolean('show-account-email');
 
         const header = new PopupMenu.PopupBaseMenuItem({ reactive: false });
-        const hbox = new St.BoxLayout({ style_class: 'um-header' });
+        const hbox = new St.BoxLayout({ style_class: 'um-header', x_expand: true });
+        hbox.add_child(new St.Icon({
+            gicon: this._icon.gicon,
+            style_class: 'um-header-icon',
+            y_align: Clutter.ActorAlign.CENTER,
+        }));
         const title = new St.BoxLayout({ vertical: true, style_class: 'um-title-box' });
         title.add_child(new St.Label({ text: 'Usage Monitor', style_class: 'um-title' }));
         const staleSummary = this._summary &&
@@ -271,19 +323,19 @@ class UsageMonitorIndicator extends PanelMenu.Button {
         this.menu.addMenuItem(header);
         this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
 
-        if (this._missingCli) {
+        if (this._fetchError) {
             const warn = new PopupMenu.PopupBaseMenuItem({ reactive: false });
             const wbox = new St.BoxLayout({ vertical: true, style_class: 'um-warning-box' });
             wbox.add_child(new St.Label({
-                text: 'usage-monitor-cli not found',
+                text: this._missingCli ? 'usage-monitor-cli not found' : 'Live usage unavailable',
                 style_class: 'um-warning-title',
             }));
-            wbox.add_child(new St.Label({
-                text: 'Install it first, then reopen this menu:\n' +
-                    'cargo install --path usage-monitor-cli\n' +
-                    'or fetch a release from the project page.',
+            const detail = new St.Label({
+                text: this._fetchError,
                 style_class: 'um-warning-body',
-            }));
+            });
+            detail.clutter_text.line_wrap = true;
+            wbox.add_child(detail);
             warn.add_child(wbox);
             this.menu.addMenuItem(warn);
             this.menu.addMenuItem(new PopupMenu.PopupSeparatorMenuItem());
@@ -309,12 +361,14 @@ class UsageMonitorIndicator extends PanelMenu.Button {
             this.menu.addMenuItem(this._providerItem(entry, showDecimals, showEmail));
         });
 
-        if (!(this._summary?.providers || []).length && !this._missingCli) {
+        if (!(this._summary?.providers || []).length && !this._fetchError) {
             const empty = new PopupMenu.PopupBaseMenuItem({ reactive: false });
-            empty.add_child(new St.Label({
+            const message = new St.Label({
                 text: 'No provider data yet. Enable a provider or configure credentials, then refresh.',
                 style_class: 'um-empty',
-            }));
+            });
+            message.clutter_text.line_wrap = true;
+            empty.add_child(message);
             this.menu.addMenuItem(empty);
         }
     }
@@ -327,7 +381,11 @@ class UsageMonitorIndicator extends PanelMenu.Button {
 
     _providerItem(entry, showDecimals, showEmail) {
         const item = new PopupMenu.PopupBaseMenuItem({ reactive: false });
-        const card = new St.BoxLayout({ vertical: true, style_class: 'um-card' });
+        const card = new St.BoxLayout({
+            vertical: true,
+            style_class: 'um-card',
+            x_expand: true,
+        });
 
         const head = new St.BoxLayout({ style_class: 'um-card-head' });
         const name = new St.Label({
@@ -357,10 +415,12 @@ class UsageMonitorIndicator extends PanelMenu.Button {
             card.add_child(new St.Label({ text: entry.plan, style_class: 'um-card-account' }));
         }
         if (entry.stale === true || entry.error) {
-            card.add_child(new St.Label({
+            const status = new St.Label({
                 text: entry.error ? String(entry.error.message || entry.error) : 'Using last successful value',
                 style_class: entry.error ? 'um-card-error' : 'um-card-stale',
-            }));
+            });
+            status.clutter_text.line_wrap = true;
+            card.add_child(status);
         }
 
         for (const win of windowList(entry)) {
@@ -371,12 +431,15 @@ class UsageMonitorIndicator extends PanelMenu.Button {
                 style_class: `um-win-pct um-${levelFor(win.percent)}`,
             }));
             card.add_child(row);
-            const track = new St.BoxLayout({ style_class: 'um-track' });
+            const track = new St.BoxLayout({ style_class: 'um-track', x_expand: true });
             const fill = new St.Bin({
                 style_class: `um-fill um-${levelFor(win.percent)}`,
-                width: Math.max(0, Math.min(100, win.percent)) / 100 * BAR_WIDTH_PX,
             });
             track.add_child(fill);
+            const fraction = Math.max(0, Math.min(100, win.percent)) / 100;
+            track.connect('notify::width', () => {
+                fill.width = track.width * fraction;
+            });
             card.add_child(track);
             if (win.reset) {
                 const reset = win.reset.startsWith('Reset') ? win.reset : `Resets: ${win.reset}`;

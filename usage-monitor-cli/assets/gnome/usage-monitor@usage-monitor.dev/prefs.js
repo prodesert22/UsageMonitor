@@ -30,7 +30,17 @@ const COLOR_KEYS = ['background', 'text', 'subtext', 'accent', 'warning',
     'critical', 'track', 'border'];
 
 function cliBin() {
-    return GLib.getenv('USAGE_MONITOR_BIN') || 'usage-monitor-cli';
+    const override = GLib.getenv('USAGE_MONITOR_BIN');
+    if (override) return override;
+    const onPath = GLib.find_program_in_path('usage-monitor-cli');
+    if (onPath) return onPath;
+    for (const path of [
+        GLib.build_filenamev([GLib.get_home_dir(), '.cargo', 'bin', 'usage-monitor-cli']),
+        GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'usage-monitor-cli']),
+    ]) {
+        if (GLib.file_test(path, GLib.FileTest.IS_EXECUTABLE)) return path;
+    }
+    return 'usage-monitor-cli';
 }
 
 function spawnSync(argv) {
