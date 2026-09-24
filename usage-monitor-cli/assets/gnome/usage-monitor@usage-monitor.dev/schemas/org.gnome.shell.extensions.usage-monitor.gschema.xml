@@ -1,0 +1,74 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<schemalist>
+  <schema id="org.gnome.shell.extensions.usage-monitor" path="/org/gnome/shell/extensions/usage-monitor/">
+    <key name="refresh-interval" type="i">
+      <range min="10" max="3600"/>
+      <default>30</default>
+      <summary>Refresh interval</summary>
+      <description>Seconds between usage fetches. Provider endpoints behind subscription plans rate-limit hard; the extension serves its cache between fetches.</description>
+    </key>
+    <key name="show-bar-text" type="b">
+      <default>true</default>
+      <summary>Show bar text</summary>
+      <description>Show the usage percentage next to the icon in the top bar. When off, the pin setting has no effect.</description>
+    </key>
+    <key name="show-account-email" type="b">
+      <default>true</default>
+      <summary>Show account email</summary>
+      <description>Show the account email/label under each provider card. When off, only the plan is shown.</description>
+    </key>
+    <key name="show-decimals" type="b">
+      <default>true</default>
+      <summary>Show decimal places</summary>
+      <description>Whole numbers render without decimals; anything else keeps one decimal place. When off, everything rounds to whole numbers.</description>
+    </key>
+    <key name="pinned-provider" type="s">
+      <default>''</default>
+      <summary>Pinned provider</summary>
+      <description>Pin one entry to the top bar: a provider id (codex) or provider/account (codex/work). Empty means the overall percentage.</description>
+    </key>
+    <key name="bar-windows" type="as">
+      <default><![CDATA[['primary', 'secondary', 'tertiary']]]></default>
+      <summary>Bar windows</summary>
+      <description>Which usage windows compose the bar text and the pinned headline: primary (Session), secondary (Weekly), tertiary (Monthly).</description>
+    </key>
+    <key name="provider-order" type="as">
+      <default>[]</default>
+      <summary>Provider order</summary>
+      <description>Ordered provider ids (or provider/account keys). Empty means the CLI order.</description>
+    </key>
+    <key name="theme-mode" type="s">
+      <default>'system'</default>
+      <summary>Theme mode</summary>
+      <description>One of system, light, dark, builtin, custom. System follows the GNOME color-scheme preference.</description>
+    </key>
+    <key name="theme-builtin" type="s">
+      <default>'macos-dark'</default>
+      <summary>Built-in theme</summary>
+      <description>One of macos-dark, macos-light, nord, dracula, tokyo-night.</description>
+    </key>
+    <key name="theme-opacity" type="d">
+      <range min="0.3" max="1.0"/>
+      <default>1.0</default>
+      <summary>Background opacity</summary>
+      <description>Popup background opacity. Only the background fill fades; text and bars stay fully opaque.</description>
+    </key>
+    <key name="theme-custom" type="s">
+      <default>'{}'</default>
+      <summary>Custom palette</summary>
+      <description>JSON object with custom colors: background, text, subtext, accent, warning, critical, track, border.</description>
+    </key>
+    <key name="bar-height" type="i">
+      <range min="2" max="16"/>
+      <default>6</default>
+      <summary>Bar height</summary>
+      <description>Usage progress bar height in pixels.</description>
+    </key>
+    <key name="corner-radius" type="i">
+      <range min="0" max="16"/>
+      <default>4</default>
+      <summary>Corner radius</summary>
+      <description>Popup card corner radius in pixels.</description>
+    </key>
+  </schema>
+</schemalist>

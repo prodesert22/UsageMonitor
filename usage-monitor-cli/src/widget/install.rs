@@ -12,13 +12,16 @@ const KDE_ID: &str = "dev.usage-monitor.kde";
 const KDE_ICON_NAME: &str = "usage-monitor";
 const KDE_ICON_SOURCE: &str = "contents/images/usage-monitor.png";
 pub(crate) const VERSION: &str = env!("CARGO_PKG_VERSION");
-pub(crate) const TARGETS: [&str; 2] = ["kde", "waybar"];
+pub(crate) const TARGETS: [&str; 3] = ["kde", "waybar", "gnome"];
+const GNOME_UUID: &str = "usage-monitor@usage-monitor.dev";
+const GNOME_SCHEMA_ID: &str = "org.gnome.shell.extensions.usage-monitor";
 const WAYBAR_BIN: &str = "usage-monitor-waybar";
 /// Launcher for the Qt Quick popup (the KDE widget's UI, wired to `on-click`).
 const WAYBAR_POPUP_BIN: &str = "usage-monitor-waybar-popup";
 const WAYBAR_DESKTOP_FILE: &str = "usage-monitor-waybar.desktop";
 static KDE_PACKAGE: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/kde/package");
 static WAYBAR: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/waybar");
+static GNOME: Dir<'_> = include_dir!("$CARGO_MANIFEST_DIR/assets/gnome");
 
 /// Process-wide lock for tests that mutate HOME/XDG_*. Shared with
 /// `update.rs` tests so parallel threads never interleave environments.
@@ -32,9 +35,11 @@ pub(crate) fn install(target: WidgetInstallTarget, force: bool) -> Result<()> {
     match target {
         WidgetInstallTarget::Kde => install_kde_stamped(force)?,
         WidgetInstallTarget::Waybar => install_waybar_stamped(force)?,
+        WidgetInstallTarget::Gnome => install_gnome_stamped(force)?,
         WidgetInstallTarget::All => {
             install_kde_stamped(force)?;
             install_waybar_stamped(force)?;
+            install_gnome_stamped(force)?;
         }
     }
     ensure_autostart()?;
@@ -51,11 +56,17 @@ pub(crate) fn uninstall(target: WidgetInstallTarget) -> Result<()> {
             uninstall_waybar()?;
             remove_stamp("waybar")?;
         }
+        WidgetInstallTarget::Gnome => {
+            uninstall_gnome()?;
+            remove_stamp("gnome")?;
+        }
         WidgetInstallTarget::All => {
             uninstall_kde()?;
             remove_stamp("kde")?;
             uninstall_waybar()?;
             remove_stamp("waybar")?;
+            uninstall_gnome()?;
+            remove_stamp("gnome")?;
         }
     }
     // Drop the login autostart once no widget remains installed.
@@ -74,6 +85,7 @@ pub(crate) fn sync(target: Option<WidgetInstallTarget>) -> Result<()> {
     let targets: Vec<&str> = match target {
         Some(WidgetInstallTarget::Kde) => vec!["kde"],
         Some(WidgetInstallTarget::Waybar) => vec!["waybar"],
+        Some(WidgetInstallTarget::Gnome) => vec!["gnome"],
         Some(WidgetInstallTarget::All) | None => TARGETS.to_vec(),
     };
     let mut upgraded = false;
@@ -87,6 +99,7 @@ pub(crate) fn sync(target: Option<WidgetInstallTarget>) -> Result<()> {
         match target {
             "kde" => install_kde_stamped(true)?,
             "waybar" => install_waybar_stamped(true)?,
+            "gnome" => install_gnome_stamped(true)?,
             _ => unreachable!(),
         }
         upgraded = true;
@@ -109,6 +122,11 @@ fn install_waybar_stamped(force: bool) -> Result<()> {
     write_stamp("waybar")
 }
 
+fn install_gnome_stamped(force: bool) -> Result<()> {
+    install_gnome(force)?;
+    write_stamp("gnome")
+}
+
 pub(crate) fn doctor() -> Result<()> {
     println!("usage-monitor-cli: {}", std::env::current_exe()?.display());
     println!("version: {VERSION}");
@@ -122,6 +140,8 @@ pub(crate) fn doctor() -> Result<()> {
     println!("KDE icon: {}", kde_icon_path()?.display());
     println!("Waybar wrapper: {}", waybar_bin_path()?.display());
     println!("Waybar popup: {}", waybar_popup_bin_path()?.display());
+    println!("GNOME extension: {}", gnome_uuid_dir()?.display());
+    println!("GNOME schema: {GNOME_SCHEMA_ID}");
     for target in TARGETS {
         println!(
             "{target} installed version: {}",
@@ -271,6 +291,56 @@ fn uninstall_waybar() -> Result<()> {
     Ok(())
 }
 
+/// Install the GNOME Shell extension locally (no extensions.gnome.org needed).
+///
+/// Copies the extension tree into
+/// `~/.local/share/gnome-shell/extensions/<uuid>/` and compiles the GSettings
+/// schemas in place. The user then enables it with Extension Manager or
+/// `gnome-extensions enable <uuid>`; on Wayland a relogin is required before
+/// the Shell picks it up.
+fn install_gnome(_force: bool) -> Result<()> {
+    let dest = gnome_ext_dir()?;
+    write_dir(&GNOME, &dest, true)?;
+    compile_gnome_schemas(&dest.join(GNOME_UUID))?;
+
+    println!(
+        "GNOME extension installed at {}",
+        dest.join(GNOME_UUID).display()
+    );
+    println!("Enable it with `gnome-extensions enable {GNOME_UUID}`");
+    println!("(or GNOME Extension Manager), then log out and back in on Wayland.");
+    println!("Without the CLI on PATH the panel shows a guided install notice.");
+    Ok(())
+}
+
+fn uninstall_gnome() -> Result<()> {
+    remove_dir_if_exists(&gnome_uuid_dir()?)?;
+    remove_dir_if_exists(&data_home()?.join("usage-monitor/gnome"))?;
+    println!("GNOME extension removed (disable it first if enabled)");
+    Ok(())
+}
+
+/// Compile the extension's GSettings schemas in place. Missing
+/// `glib-compile-schemas` is not fatal: GNOME compiles user-extension schemas
+/// lazily on load in recent versions, and the next `widget sync` retries.
+fn compile_gnome_schemas(ext_dir: &Path) -> Result<()> {
+    let Some(tool) = find_command("glib-compile-schemas") else {
+        println!("glib-compile-schemas not found; skipping schema compile");
+        return Ok(());
+    };
+    let output = Command::new(&tool)
+        .arg(ext_dir.join("schemas"))
+        .output()
+        .with_context(|| format!("failed to run {}", tool.display()))?;
+    if !output.status.success() {
+        anyhow::bail!(
+            "glib-compile-schemas failed: {}",
+            String::from_utf8_lossy(&output.stderr).trim()
+        );
+    }
+    Ok(())
+}
+
 fn write_dir(dir: &Dir<'_>, dest: &Path, overwrite: bool) -> Result<()> {
     if dest.exists() && overwrite {
         fs::remove_dir_all(dest).with_context(|| format!("remove {}", dest.display()))?;
@@ -343,6 +413,14 @@ fn waybar_popup_bin_path() -> Result<PathBuf> {
 
 fn waybar_desktop_path() -> Result<PathBuf> {
     Ok(data_home()?.join(format!("applications/{WAYBAR_DESKTOP_FILE}")))
+}
+
+fn gnome_ext_dir() -> Result<PathBuf> {
+    Ok(data_home()?.join("gnome-shell/extensions"))
+}
+
+fn gnome_uuid_dir() -> Result<PathBuf> {
+    Ok(gnome_ext_dir()?.join(GNOME_UUID))
 }
 
 fn config_home() -> Result<PathBuf> {
@@ -490,6 +568,67 @@ fn set_executable_if_needed(_path: &Path) -> Result<()> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn write_dir_materializes_gnome_assets() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dest = tmp.path().join("extensions");
+        write_dir(&GNOME, &dest, true).unwrap();
+
+        let ext = dest.join(GNOME_UUID);
+        for name in [
+            "metadata.json",
+            "extension.js",
+            "prefs.js",
+            "stylesheet.css",
+            "schemas/org.gnome.shell.extensions.usage-monitor.gschema.xml",
+            "icons/usage-monitor.png",
+        ] {
+            assert!(ext.join(name).is_file(), "missing {name}");
+        }
+        assert!(no_python_cache(&dest));
+    }
+
+    #[test]
+    fn gnome_metadata_matches_binary() {
+        let metadata = GNOME
+            .get_file(format!("{GNOME_UUID}/metadata.json"))
+            .and_then(|file| std::str::from_utf8(file.contents()).ok())
+            .unwrap();
+        let value: serde_json::Value = serde_json::from_str(metadata).unwrap();
+        assert_eq!(value["uuid"], GNOME_UUID);
+        assert_eq!(value["settings-schema"], GNOME_SCHEMA_ID);
+        // The Shell shows this version in Extension Manager; the update banner
+        // compares the stamp against the binary, so they must agree.
+        assert_eq!(value["version"], VERSION);
+        let shells = value["shell-version"].as_array().unwrap();
+        assert!(
+            !shells.is_empty(),
+            "shell-version must list supported Shells"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn install_gnome_records_stamp_and_uuid_dir() {
+        with_temp_home(|_| {
+            install(WidgetInstallTarget::Gnome, false).unwrap();
+            assert_eq!(read_stamp("gnome").unwrap().as_deref(), Some(VERSION));
+            let uuid_dir = gnome_uuid_dir().unwrap();
+            assert!(uuid_dir.join("metadata.json").is_file());
+            assert!(uuid_dir.join("extension.js").is_file());
+            assert!(autostart_path().unwrap().is_file());
+
+            uninstall(WidgetInstallTarget::Gnome).unwrap();
+            assert_eq!(read_stamp("gnome").unwrap(), None);
+            assert!(
+                !uuid_dir.exists(),
+                "uninstall must remove only our uuid dir"
+            );
+            // The parent extensions dir (home to other extensions) survives.
+            assert!(gnome_ext_dir().unwrap().exists());
+        });
+    }
 
     #[test]
     fn is_python_cache_matches_pyc_and_pycache_dirs() {

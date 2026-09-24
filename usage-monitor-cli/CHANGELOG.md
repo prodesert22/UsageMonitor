@@ -7,6 +7,15 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+### Added
+- GNOME Shell extension (45–49) with the KDE widget layout: top-bar
+  indicator, one card per provider/account, cost, and Preferences with
+  General/Providers/Order/Theme/Updates pages. `usage-monitor-cli widget
+  install gnome` installs it locally (no store needed, GSettings schemas
+  compiled in place); `widget gnome` emits the same JSON contract as the
+  other widgets. The store listing ships only the extension — without the
+  CLI the popup shows a guided install notice instead of failing.
+
 ## [0.9.0]
 
 Brings Gemini browser login, per-account bar pins, bar window checkboxes,

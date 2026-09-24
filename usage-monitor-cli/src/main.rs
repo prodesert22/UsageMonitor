@@ -93,6 +93,7 @@ async fn main() -> Result<()> {
         }
         Command::Widget(cmd) => match cmd {
             WidgetCmd::Waybar(args) => widget::run_widget(&registry, &config, args, false).await?,
+            WidgetCmd::Gnome(args) => widget::run_widget(&registry, &config, args, false).await?,
             WidgetCmd::Kde(args) => {
                 widget::run_widget(&registry, &config, args.target, args.pretty).await?
             }
