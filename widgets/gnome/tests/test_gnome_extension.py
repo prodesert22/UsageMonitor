@@ -76,7 +76,7 @@ class GnomePackagingTests(unittest.TestCase):
     def test_stylesheet_has_level_classes(self):
         css = (_EXT_DIR / "stylesheet.css").read_text()
         for cls in ["um-panel-text", "um-ok", "um-warning", "um-critical",
-                    "um-stale", "um-card", "um-track", "um-fill"]:
+                    "um-stale", "um-card", "um-card-cost", "um-track", "um-fill"]:
             self.assertIn(cls, css, f"stylesheet missing .{cls}")
 
     def test_extension_spawns_widget_gnome(self):

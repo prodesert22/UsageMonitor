@@ -39,6 +39,7 @@
 .um-card-pct.um-warning, .um-win-pct.um-warning, .um-fill.um-warning { color: #ff9f0a; }
 .um-card-pct.um-critical, .um-win-pct.um-critical, .um-fill.um-critical { color: #ff453a; }
 .um-card-account { opacity: 0.7; font-size: 0.9em; }
+.um-card-cost { opacity: 0.8; font-size: 0.9em; }
 .um-card-stale { opacity: 0.65; font-size: 0.9em; }
 .um-card-error { color: #ff453a; }
 .um-empty { opacity: 0.75; }

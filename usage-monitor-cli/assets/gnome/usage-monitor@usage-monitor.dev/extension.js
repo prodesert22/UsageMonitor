@@ -47,6 +47,15 @@ function accountText(entry) {
     return '';
 }
 
+// Same "$X.XX (30d)" label the KDE card shows for its cost entries.
+function costLabel(cost) {
+    if (!cost || typeof cost !== 'object') return '';
+    const total = Number(cost.total_cost);
+    if (!Number.isFinite(total)) return '';
+    const cur = cost.currency ? `${cost.currency} ` : '';
+    return `${cur}${total.toFixed(2)} (30d)`;
+}
+
 function windowList(entry) {
     const out = [];
     for (const key of ['primary', 'secondary', 'tertiary']) {
@@ -360,6 +369,9 @@ class UsageMonitorIndicator extends PanelMenu.Button {
                 card.add_child(new St.Label({ text: reset, style_class: 'um-win-reset' }));
             }
         }
+        const cost = costLabel(entry.cost);
+        if (cost)
+            card.add_child(new St.Label({ text: cost, style_class: 'um-card-cost' }));
         item.add_child(card);
         return item;
     }
