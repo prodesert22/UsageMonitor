@@ -91,6 +91,7 @@ pub(crate) fn check_updates(target: Option<WidgetInstallTarget>) -> Result<Vec<U
     match target {
         Some(WidgetInstallTarget::Kde) => Ok(vec![status_for("kde")?]),
         Some(WidgetInstallTarget::Waybar) => Ok(vec![status_for("waybar")?]),
+        Some(WidgetInstallTarget::Gnome) => Ok(vec![status_for("gnome")?]),
         Some(WidgetInstallTarget::All) | None => TARGETS
             .iter()
             .map(|target| status_for(target))
@@ -387,7 +388,7 @@ mod tests {
         with_temp_data_home(|| {
             // Nothing installed: no update pending anywhere.
             let all = check_updates(None).unwrap();
-            assert_eq!(all.len(), 2);
+            assert_eq!(all.len(), super::super::install::TARGETS.len());
             assert!(all.iter().all(|u| u.installed.is_none() && !u.outdated));
 
             // A stale kde stamp is outdated; waybar stays clean.

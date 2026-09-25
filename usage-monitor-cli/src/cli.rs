@@ -56,6 +56,7 @@ pub(crate) enum Command {
 pub(crate) enum WidgetCmd {
     Waybar(WidgetTargetArgs),
     Kde(KdeWidgetArgs),
+    Gnome(WidgetTargetArgs),
     Install(WidgetInstallArgs),
     Uninstall(WidgetInstallArgs),
     /// Reinstall any already-installed widget whose version is older than this
@@ -82,6 +83,7 @@ pub(crate) struct WidgetInstallArgs {
 pub(crate) enum WidgetInstallTarget {
     Kde,
     Waybar,
+    Gnome,
     All,
 }
 
@@ -149,6 +151,11 @@ pub(crate) enum AccountCmd {
         name: String,
         key: String,
         value: String,
+    },
+    /// Read a config value from stdin instead of exposing it in the process arguments.
+    SetStdin {
+        name: String,
+        key: String,
     },
     Unset {
         name: String,

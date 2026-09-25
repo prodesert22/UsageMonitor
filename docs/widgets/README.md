@@ -8,9 +8,10 @@ Plasma 6 and Waybar.
 ```bash
 usage-monitor-cli widget waybar
 usage-monitor-cli widget kde --pretty
+usage-monitor-cli widget gnome
 ```
 
-Both commands fetch all enabled providers and emit one JSON object:
+All three commands fetch all enabled providers and emit one JSON object:
 
 ```json
 {
@@ -48,7 +49,8 @@ Both widgets are embedded in the CLI binary (asset tree under
 ```bash
 usage-monitor-cli widget install kde      # KDE plasmoid (via kpackagetool6)
 usage-monitor-cli widget install waybar   # Waybar module + popup into ~/.local/bin
-usage-monitor-cli widget install all      # both
+usage-monitor-cli widget install gnome    # GNOME Shell extension (local, no store needed)
+usage-monitor-cli widget install all      # all three
 usage-monitor-cli widget uninstall <target>
 usage-monitor-cli widget doctor           # show resolved install paths
 ```
@@ -103,3 +105,8 @@ usage-monitor-cli widget sync kde                # reinstall one outdated widget
   popup (`on-click`) carrying the same interface as the KDE widget: provider
   cards, cost, and a settings window with General/Providers/Order/Theme pages.
   The popup needs PySide6 or PyQt6; the bar module does not.
+- [GNOME Shell](gnome.md) — top-bar indicator (GNOME 45–49) with the same
+  KDE layout: provider cards, cost, and Preferences with
+  General/Providers/Order/Theme/Updates pages, including provider toggles and
+  account setup. Installed locally by the CLI; the store listing requires the
+  CLI separately.

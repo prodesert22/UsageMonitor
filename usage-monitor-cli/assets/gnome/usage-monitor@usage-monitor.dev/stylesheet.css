@@ -1,0 +1,63 @@
+/* Usage Monitor panel + popup styling.
+ * Class suffixes ok/warning/critical mirror the KDE ThemePalette thresholds
+ * (accent <70%, warning 70-89%, critical >=90%); stale dims the same way.
+ */
+
+.um-panel-box { spacing: 6px; }
+
+.um-panel-icon { icon-size: 16px; }
+
+.um-panel-text { font-weight: bold; padding-top: 2px; }
+.um-panel-text.um-ok { color: #0a84ff; }
+.um-panel-text.um-warning { color: #ff9f0a; }
+.um-panel-text.um-critical { color: #ff453a; }
+.um-panel-text.um-stale { opacity: 0.65; }
+
+.um-popup { min-width: 400px; max-width: 400px; font-size: 0.9em; }
+
+.um-header { spacing: 8px; }
+.um-header-icon { icon-size: 20px; }
+.um-title { font-weight: bold; font-size: 1em; }
+.um-subtitle { opacity: 0.72; font-size: 0.9em; }
+
+.um-button {
+    border: 1px solid rgba(128, 128, 128, 0.4);
+    border-radius: 6px;
+    padding: 4px 10px;
+}
+.um-button:hover { background-color: rgba(128, 128, 128, 0.2); }
+
+.um-warning-box { spacing: 4px; padding: 4px 0; }
+.um-warning-title { font-weight: bold; color: #ff9f0a; }
+.um-warning-body { opacity: 0.85; max-width: 360px; }
+
+.um-update-box { spacing: 4px; padding: 4px 0; }
+.um-update-text { color: #0a84ff; }
+
+.um-card { spacing: 4px; padding: 6px 0; }
+.um-card-head { spacing: 8px; }
+.um-card-title { font-weight: bold; }
+.um-card-pct { font-weight: bold; }
+.um-card-pct.um-ok, .um-win-pct.um-ok, .um-fill.um-ok { color: #0a84ff; }
+.um-card-pct.um-warning, .um-win-pct.um-warning, .um-fill.um-warning { color: #ff9f0a; }
+.um-card-pct.um-critical, .um-win-pct.um-critical, .um-fill.um-critical { color: #ff453a; }
+.um-card-account { opacity: 0.7; font-size: 0.9em; }
+.um-card-cost { opacity: 0.8; font-size: 0.9em; }
+.um-card-stale { opacity: 0.65; font-size: 0.9em; }
+.um-card-error { color: #ff453a; }
+.um-empty { opacity: 0.75; max-width: 360px; }
+
+.um-win-row { spacing: 8px; }
+.um-win-label { opacity: 0.9; }
+.um-win-pct { font-weight: bold; }
+.um-win-reset { opacity: 0.65; font-size: 0.9em; }
+
+.um-track {
+    background-color: rgba(128, 128, 128, 0.25);
+    border-radius: 3px;
+    height: 6px;
+}
+.um-fill { border-radius: 3px; height: 6px; }
+.um-fill.um-ok { background-color: #0a84ff; }
+.um-fill.um-warning { background-color: #ff9f0a; }
+.um-fill.um-critical { background-color: #ff453a; }

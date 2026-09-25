@@ -7,6 +7,33 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+### Added
+- GNOME Providers preferences now show the full CLI provider catalog and let
+  users enable providers, add/remove named accounts, and save credentials with
+  masked secret fields. The About page website is a clickable link.
+- GNOME Shell extension (45–49) with the KDE widget layout: top-bar
+  indicator, one card per provider/account, cost, and Preferences with
+  General/Providers/Order/Theme/Updates pages. `usage-monitor-cli widget
+  install gnome` installs it locally (no store needed, GSettings schemas
+  compiled in place); `widget gnome` emits the same JSON contract as the
+  other widgets. The store listing ships only the extension — without the
+  CLI the popup shows a guided install notice instead of failing.
+
+### Fixed
+- GNOME account setup now passes credentials to the CLI through stdin, keeping
+  them out of process arguments. Theme preferences now apply their palette,
+  opacity, bar height, and corner radius to the popup. Explicit accounts whose
+  labels include “auto-detected” retain their Remove action.
+- GNOME popup cards and usage bars now fill the available menu width, with
+  smaller text closer to the KDE widget. The panel percentage is vertically
+  aligned with the icon. When an older CLI lacks `widget gnome`, the extension
+  fetches live data through its compatible `widget kde` command. It prefers
+  user-installed CLI binaries over older system copies. The async Gio read is
+  promisified so fresh JSON replaces the placeholder cache. Failed live
+  refreshes mark cached values as stale and show an error notice.
+- The GNOME top bar now renders every selected usage window, so session (5h)
+  and weekly values are both visible instead of only the overall maximum.
+
 ## [0.9.0]
 
 Brings Gemini browser login, per-account bar pins, bar window checkboxes,
