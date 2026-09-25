@@ -7,6 +7,12 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+## [0.10.1]
+
+First release with Linux distribution packaging: every GitHub release now
+ships a `.deb`, `.rpm`, Arch `.pkg.tar.zst`, `.AppImage`, Flatpak manifest,
+and generic `.tar.gz` alongside crates.io.
+
 ### Added
 - Linux distribution packaging: per-release `.deb` (cargo-deb), `.rpm`
   (cargo-generate-rpm), Arch `.pkg.tar.zst` (`dist/arch/PKGBUILD`,
@@ -25,6 +31,8 @@ notes live in [`releases/`](releases/).
   after package validation. Local builds reject output folders with old artifacts.
 - Asset generation no longer depends on valid user configuration. AppImage icon
   metadata and automatic tool extraction work without FUSE.
+
+See [releases/v0.10.1.md](releases/v0.10.1.md).
 
 ## [0.10.0]
 

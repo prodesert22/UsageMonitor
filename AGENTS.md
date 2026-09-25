@@ -70,7 +70,9 @@ assets/                 Project artwork used by documentation/README
    `usage-monitor-cli/assets/kde/package/metadata.json`,
    `usage-monitor-cli/assets/kde/package/contents/code/usage_monitor_kde.py`,
    `usage-monitor-cli/assets/waybar/usage_monitor_waybar_data.py`
-   (`POPUP_VERSION`), `CHANGELOG.md`, and `releases/vX.Y.Z.md`. Also refresh
+   (`POPUP_VERSION`),
+   `usage-monitor-cli/assets/gnome/usage-monitor@usage-monitor.dev/metadata.json`,
+   `CHANGELOG.md`, and `releases/vX.Y.Z.md`. Also refresh
    the packaged changelog copy (`cp CHANGELOG.md usage-monitor-cli/CHANGELOG.md` —
    `cargo publish` tarballs only ship the package directory, and the
    `embedded_changelog_matches_workspace` test fails on drift). Bump
