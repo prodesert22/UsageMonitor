@@ -25,14 +25,14 @@ const WINDOW_LABELS = { primary: 'Session', secondary: 'Weekly', tertiary: 'Mont
 function cliBin() {
     const override = GLib.getenv('USAGE_MONITOR_BIN');
     if (override) return override;
-    const onPath = GLib.find_program_in_path('usage-monitor-cli');
-    if (onPath) return onPath;
     for (const path of [
         GLib.build_filenamev([GLib.get_home_dir(), '.cargo', 'bin', 'usage-monitor-cli']),
         GLib.build_filenamev([GLib.get_home_dir(), '.local', 'bin', 'usage-monitor-cli']),
     ]) {
         if (GLib.file_test(path, GLib.FileTest.IS_EXECUTABLE)) return path;
     }
+    const onPath = GLib.find_program_in_path('usage-monitor-cli');
+    if (onPath) return onPath;
     return 'usage-monitor-cli';
 }
 
@@ -41,6 +41,8 @@ function cliFailureHint(message) {
         return 'usage-monitor-cli was not found. Install the CLI to load live usage.';
     if (unsupportedGnomeCommand(message))
         return 'The installed usage-monitor-cli is too old for the GNOME widget. Reinstall the CLI to load live usage.';
+    if (/unrecognized subcommand.*kde|unexpected argument.*kde/i.test(message))
+        return 'The installed usage-monitor-cli has no widget data command. Update it with `cargo install --path usage-monitor-cli --force`.';
     return 'Could not refresh usage. Check the CLI in a terminal, then refresh again.';
 }
 

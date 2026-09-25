@@ -39,8 +39,9 @@ cannot restart the Shell in place. Remove it with
 `usage-monitor-cli widget uninstall gnome`, and inspect resolved paths with
 `usage-monitor-cli widget doctor`.
 
-The extension looks for the CLI on the GNOME Shell `PATH`, then in
-`~/.cargo/bin/` and `~/.local/bin/`. For a different location, set
+The extension looks in `~/.cargo/bin/` and `~/.local/bin/` before searching
+the GNOME Shell `PATH`, so a user-installed CLI takes priority over an older
+system copy. For a different location, set
 `USAGE_MONITOR_BIN` to an absolute path in the GNOME Shell session environment
 before logging in. Setting it only in a terminal does not affect the running
 Shell.
@@ -112,8 +113,8 @@ automatically uses its `widget kde` command, which emits the same JSON.
 - Popup shows **Live usage unavailable**: run the widget command in a terminal
   to see why a live fetch failed. The popup marks cached values as stale until
   a live fetch succeeds; clear an old demo cache from Preferences → General →
-  Cached usage data if needed. If the installed CLI supports neither widget
-  command, reinstall it from this checkout with
+  Cached usage data if needed. If the CLI reports that `widget kde` is unknown,
+  reinstall it from this checkout with
   `cargo install --path usage-monitor-cli --force`.
 - Extension installed but not loading: confirm the uuid is enabled
   (`gnome-extensions list --enabled`) and relog on Wayland.

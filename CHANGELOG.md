@@ -20,8 +20,9 @@ notes live in [`releases/`](releases/).
 - GNOME popup cards and usage bars now fill the available menu width, with
   smaller text closer to the KDE widget. The panel percentage is vertically
   aligned with the icon. When an older CLI lacks `widget gnome`, the extension
-  fetches live data through its compatible `widget kde` command. Failed live
-  refreshes mark cached values as stale and show an error notice.
+  fetches live data through its compatible `widget kde` command. It prefers
+  user-installed CLI binaries over older system copies. Failed live refreshes
+  mark cached values as stale and show an error notice.
 
 ## [0.9.0]
 
