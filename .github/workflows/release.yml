@@ -239,7 +239,10 @@ jobs:
     needs: [verify, dist]
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      # Write is required even though this job only downloads: draft
+      # releases are invisible to read-only tokens, so `gh release
+      # download` fails with "release not found" without it.
+      contents: write
     steps:
       - uses: actions/checkout@v4
         with:

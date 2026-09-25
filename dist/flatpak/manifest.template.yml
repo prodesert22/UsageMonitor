@@ -47,11 +47,15 @@ modules:
       - mkdir -p .cargo && cp flatpak-cargo-config.toml .cargo/config.toml
       - cargo --offline build --release --frozen
       - install -Dm755 target/release/usage-monitor-cli /app/bin/usage-monitor-cli
-      - /app/bin/usage-monitor-cli generate-dist /tmp/um-dist
-      - install -Dm644 /tmp/um-dist/man/man1/usage-monitor-cli.1 /app/share/man/man1/usage-monitor-cli.1
-      - install -Dm644 /tmp/um-dist/completions/usage-monitor-cli.bash /app/share/bash-completion/completions/usage-monitor-cli
-      - install -Dm644 /tmp/um-dist/completions/_usage-monitor-cli /app/share/zsh/vendor-completions/_usage-monitor-cli
-      - install -Dm644 /tmp/um-dist/completions/usage-monitor-cli.fish /app/share/fish/vendor_completions.d/usage-monitor-cli.fish
+      # NOTE: generated files go into ./um-dist inside the build tree, NOT
+      # /tmp: flatpak-builder runs each build-command in its own sandbox
+      # invocation with a fresh /tmp, so anything written to /tmp by one
+      # command is gone by the next.
+      - /app/bin/usage-monitor-cli generate-dist ./um-dist
+      - install -Dm644 ./um-dist/man/man1/usage-monitor-cli.1 /app/share/man/man1/usage-monitor-cli.1
+      - install -Dm644 ./um-dist/completions/usage-monitor-cli.bash /app/share/bash-completion/completions/usage-monitor-cli
+      - install -Dm644 ./um-dist/completions/_usage-monitor-cli /app/share/zsh/vendor-completions/_usage-monitor-cli
+      - install -Dm644 ./um-dist/completions/usage-monitor-cli.fish /app/share/fish/vendor_completions.d/usage-monitor-cli.fish
       - install -Dm644 dist/usage-monitor-cli.desktop /app/share/applications/dev.usage_monitor.UsageMonitor.desktop
       - sed -i "s/^Icon=.*/Icon=dev.usage_monitor.UsageMonitor/" /app/share/applications/dev.usage_monitor.UsageMonitor.desktop
       - install -Dm644 dist/dev.usage_monitor.UsageMonitor.metainfo.xml /app/share/metainfo/dev.usage_monitor.UsageMonitor.metainfo.xml
