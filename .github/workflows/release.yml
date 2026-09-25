@@ -14,7 +14,9 @@ on:
 env:
   CARGO_TERM_COLOR: always
   # Resolves to the dispatch input when run manually, else the pushed tag.
-  TAG: ${{ inputs.tag || github.ref_name }}
+  # A missing `v` prefix is tolerated (`0.10.1` -> `v0.10.1`) so checkout
+  # never fails cryptically before the format validation step runs.
+  TAG: ${{ inputs.tag == '' && github.ref_name || (startsWith(inputs.tag, 'v') && inputs.tag || format('v{0}', inputs.tag)) }}
 
 jobs:
   verify:
@@ -23,7 +25,17 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ env.TAG }}
+
+      - &normalize-tag
+        name: Normalize TAG
+        # Workflow expressions can't trim strings, so a dispatch input like
+        # "v0.10.1 " (trailing space) would poison every $TAG use below.
+        # Strip all whitespace here and re-export for this job's steps.
+        run: |
+          TAG="$(printf '%s' "$TAG" | tr -d '[:space:]')"
+          echo "TAG=$TAG" >> "$GITHUB_ENV"
+          echo "normalized TAG=$TAG"
 
       - name: Validate tag format
         run: |
@@ -88,7 +100,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ env.TAG }}
+
+      - *normalize-tag
 
       - name: Create GitHub release
         env:
@@ -109,7 +123,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ env.TAG }}
+
+      - *normalize-tag
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -131,9 +147,11 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ env.TAG }}
           # dist/flatpak/make-source-tarball.sh runs `git archive v$VERSION`.
           fetch-depth: 0
+
+      - *normalize-tag
 
       - name: Install Rust stable
         uses: dtolnay/rust-toolchain@stable
@@ -246,8 +264,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          ref: ${{ inputs.tag || github.ref_name }}
+          ref: ${{ env.TAG }}
           fetch-depth: 0
+
+      - *normalize-tag
 
       - name: Download release artifacts
         env:
@@ -281,6 +301,8 @@ jobs:
     permissions:
       contents: write
     steps:
+      - *normalize-tag
+
       - name: Publish draft
         env:
           GH_TOKEN: ${{ github.token }}
