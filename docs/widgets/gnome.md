@@ -81,17 +81,18 @@ confuses the version shown in Extension Manager.
   - **General** — refresh interval, show bar text, show account email, show
     decimal places, pin to top bar (`provider` or `provider/account`), the
     Session (5h)/Weekly/Monthly windows shown in the bar text, clear cache.
-  - **Providers** — enable/disable toggles (same as
-    `usage-monitor-cli enable|disable <provider>`). Named accounts are added
-    in a terminal; the page shows the exact commands per auth type
-    (API key, token, cookie, OAuth/CLI logins).
+  - **Providers** — the full provider catalog comes from the CLI. Enable or
+    disable providers, add/remove named accounts, and enter their credentials
+    in the extension; secret fields are masked. OAuth sign-ins that need a
+    provider CLI still show the required setup steps.
   - **Order** — reorder the provider cards (empty = CLI order).
   - **Theme** — follow the GNOME color-scheme, light/dark palettes, a
     bundled theme (macOS Dark/Light, Nord, Dracula, Tokyo Night), or a
     custom palette, plus popup opacity, bar height and corner radius.
-  - **Updates** — installed vs CLI version, one-click
-    `widget sync gnome` reinstall (relogin on Wayland afterwards), and the
-    same release-notes lookup as the other widgets.
+  - **Updates** — installed vs CLI version and one-click reinstall. On
+    Wayland, log out and back in after updating extension code so the Shell
+    loads it; refreshing usage data does not require a new session.
+  - **About** — the project website opens from a clickable link.
 - Settings live in GSettings (`org.gnome.shell.extensions.usage-monitor`);
   the usage cache lives in `~/.cache/usage-monitor-gnome/last.json`,
   separate from the KDE/Waybar state.

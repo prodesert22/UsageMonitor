@@ -107,5 +107,6 @@ usage-monitor-cli widget sync kde                # reinstall one outdated widget
   The popup needs PySide6 or PyQt6; the bar module does not.
 - [GNOME Shell](gnome.md) — top-bar indicator (GNOME 45–49) with the same
   KDE layout: provider cards, cost, and Preferences with
-  General/Providers/Order/Theme/Updates pages. Installed locally by the CLI;
-  the store listing requires the CLI separately.
+  General/Providers/Order/Theme/Updates pages, including provider toggles and
+  account setup. Installed locally by the CLI; the store listing requires the
+  CLI separately.

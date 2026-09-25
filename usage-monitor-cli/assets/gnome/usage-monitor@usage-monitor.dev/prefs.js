@@ -15,16 +15,11 @@ import GLib from 'gi://GLib';
 import Gtk from 'gi://Gtk';
 import { ExtensionPreferences } from 'resource:///org/gnome/Shell/Extensions/js/extensions/prefs.js';
 
-const ACCOUNT_HINTS = [
-    ['API key', 'openai, anthropic, openrouter, groq, deepseek, kimik2, minimax, moonshot, venice, zai, elevenlabs, deepgram, llmproxy',
-        'usage-monitor-cli openai set api_key sk-…'],
-    ['Token', 'grok, kimi, copilot, devin, windsurf, opencode-go',
-        'usage-monitor-cli kimi set token <kimi-auth-jwt>'],
-    ['Cookie', 'abacus, mistral, ollama, cursor, perplexity',
-        'usage-monitor-cli <provider> set … (see provider docs)'],
-    ['OAuth / CLI', 'codex, claude, gemini, antigravity',
-        'codex login   (in a terminal; isolated CODEX_HOME per extra account)'],
-];
+import {
+    parseProviderAccounts,
+    parseProviderList,
+    providerAuth,
+} from './provider_settings.js';
 
 const COLOR_KEYS = ['background', 'text', 'subtext', 'accent', 'warning',
     'critical', 'track', 'border'];
@@ -157,39 +152,211 @@ export default class UsageMonitorPreferences extends ExtensionPreferences {
 
     _providersPage() {
         const page = newPage('Providers', 'network-workgroup-symbolic');
-        // `list` is local (no network): "id  state  Name — description".
         const listRes = spawnSync([cliBin(), 'list']);
-        const states = new Map();
-        for (const line of listRes.out.split('\n')) {
-            const m = line.match(/^(\S+)\s+(enabled(?:\s*\(auto\))?|disabled(?:\s*\(auto\))?|auto[^\s]*)/);
-            if (m) states.set(m[1], m[2]);
+        const group = newGroup(page, 'Providers',
+            'Add accounts and credentials here. Secret fields are masked and saved in the CLI configuration.');
+        if (!listRes.ok) {
+            group.description = 'Could not read the provider list. Check that usage-monitor-cli is installed.';
+            return page;
         }
-        const toggles = newGroup(page, 'Providers');
-        const cache = readCache();
-        const providers = cache?.providers || [];
+        const providers = parseProviderList(listRes.out);
         if (!providers.length) {
-            toggles.description =
-                'No provider data cached yet. Open the top-bar menu once (it fetches on open), then reopen Preferences.';
+            group.description = 'No registered providers were returned by usage-monitor-cli.';
+            return page;
         }
+
         for (const p of providers) {
-            const id = p.provider_id || '';
-            const state = states.get(id) || 'unknown';
-            const sw = new Adw.SwitchRow({
-                title: `${p.display_name || id}${p.error ? '  ·  error' : ''}`,
-                subtitle: state,
-                active: !/^disabled/.test(state),
+            const id = p.id;
+            const auth = providerAuth(id);
+            const providerRow = new Adw.ExpanderRow({
+                title: p.displayName,
+                subtitle: id + ' · ' + p.state,
             });
-            // Enabled state is authoritative in the CLI config; toggling shells
-            // out to the CLI directly (same as `usage-monitor-cli enable|disable`).
+            const sw = new Gtk.Switch({
+                active: p.enabled,
+                valign: Gtk.Align.CENTER,
+            });
+            providerRow.add_suffix(sw);
+            group.add(providerRow);
+
+            let changingState = false;
+            let accountsLoaded = false;
+            let feedbackRow = null;
+            const accountRows = [];
+            const showMessage = message => {
+                if (!feedbackRow) {
+                    feedbackRow = new Adw.ActionRow({ title: message });
+                    providerRow.add_row(feedbackRow);
+                } else {
+                    feedbackRow.title = message;
+                }
+            };
+            const clearMessage = () => {
+                if (feedbackRow) {
+                    providerRow.remove(feedbackRow);
+                    feedbackRow = null;
+                }
+            };
+            const clearAccountRows = () => {
+                while (accountRows.length) providerRow.remove(accountRows.pop());
+            };
+            const addAccountRow = row => {
+                providerRow.add_row(row);
+                accountRows.push(row);
+            };
+            const loadAccounts = () => {
+                clearAccountRows();
+                const result = spawnSync([cliBin(), id, 'show']);
+                if (!result.ok) {
+                    addAccountRow(new Adw.ActionRow({
+                        title: 'Accounts unavailable',
+                        subtitle: 'Could not read this provider’s accounts from usage-monitor-cli.',
+                    }));
+                    return;
+                }
+                const accounts = parseProviderAccounts(result.out);
+                if (!accounts.length) {
+                    addAccountRow(new Adw.ActionRow({
+                        title: 'No accounts configured',
+                        subtitle: 'Credentials may still be detected automatically.',
+                    }));
+                    return;
+                }
+                for (const account of accounts) {
+                    const accountRow = new Adw.ActionRow({
+                        title: account.label,
+                        subtitle: account.id + ' · ' +
+                            (account.autoDetected ? 'detected automatically' :
+                                account.active ? 'enabled' : 'disabled'),
+                    });
+                    if (account.removable) {
+                        const remove = new Gtk.Button({
+                            label: 'Remove',
+                            valign: Gtk.Align.CENTER,
+                        });
+                        remove.connect('clicked', () => {
+                            const removed = spawnSync([
+                                cliBin(), id, 'account', 'remove', account.id,
+                            ]);
+                            if (!removed.ok) {
+                                showMessage('Could not remove this account.');
+                                return;
+                            }
+                            clearMessage();
+                            loadAccounts();
+                            showMessage('Account removed.');
+                        });
+                        accountRow.add_suffix(remove);
+                    }
+                    addAccountRow(accountRow);
+                }
+            };
+
             sw.connect('notify::active', () => {
-                spawnSync([cliBin(), sw.get_active() ? 'enable' : 'disable', id]);
+                if (changingState) return;
+                const enabled = sw.get_active();
+                const result = spawnSync([
+                    cliBin(), enabled ? 'enable' : 'disable', id,
+                ]);
+                if (!result.ok) {
+                    changingState = true;
+                    sw.set_active(!enabled);
+                    changingState = false;
+                    showMessage('Could not change this provider’s enabled state.');
+                    return;
+                }
+                providerRow.subtitle = id + ' · ' + (enabled ? 'enabled' : 'disabled');
+                clearMessage();
             });
-            toggles.add(sw);
-        }
-        const accounts = newGroup(page, 'Manage accounts',
-            'Add/remove named accounts in a terminal; the popup lists one card per account automatically:');
-        for (const [kind, who, cmd] of ACCOUNT_HINTS) {
-            accounts.add(new Adw.ActionRow({ title: `${kind} — ${who}`, subtitle: cmd }));
+
+            if (auth.setupHint) {
+                providerRow.add_row(new Adw.ActionRow({
+                    title: 'Sign-in setup',
+                    subtitle: auth.setupHint,
+                    subtitle_lines: 3,
+                }));
+            }
+
+            const accountName = new Adw.EntryRow({ title: 'Account name (e.g. work)' });
+            const accountLabel = new Adw.EntryRow({ title: 'Label (optional)' });
+            providerRow.add_row(accountName);
+            providerRow.add_row(accountLabel);
+            const fieldRows = auth.fields.map(field => {
+                const title = field.label +
+                    (field.placeholder ? ' (' + field.placeholder + ')' : '');
+                const entry = field.secret
+                    ? new Adw.PasswordEntryRow({ title })
+                    : new Adw.EntryRow({ title });
+                providerRow.add_row(entry);
+                return { field, entry };
+            });
+            const addButton = new Gtk.Button({
+                label: 'Add account',
+                valign: Gtk.Align.CENTER,
+                sensitive: false,
+            });
+            const addRow = new Adw.ActionRow({ title: 'Add account' });
+            addRow.add_suffix(addButton);
+            providerRow.add_row(addRow);
+
+            const updateAddButton = () => {
+                const requiredKeys = auth.requiredFields || fieldRows
+                    .filter(({ field }) => ['api_key', 'token', 'cookie'].includes(field.key))
+                    .map(({ field }) => field.key);
+                const anyKeys = auth.requiredAny || fieldRows.map(({ field }) => field.key);
+                const valueFor = key => fieldRows
+                    .find(({ field }) => field.key === key)?.entry.get_text().trim() || '';
+                const hasRequired = requiredKeys.every(key => valueFor(key).length > 0);
+                const hasAny = anyKeys.some(key => valueFor(key).length > 0);
+                addButton.sensitive = accountName.get_text().trim().length > 0 &&
+                    hasAny && hasRequired;
+            };
+            accountName.connect('notify::text', updateAddButton);
+            for (const { entry } of fieldRows) {
+                entry.connect('notify::text', updateAddButton);
+            }
+
+            addButton.connect('clicked', () => {
+                const name = accountName.get_text().trim();
+                const label = accountLabel.get_text().trim();
+                const fields = fieldRows.map(({ field, entry }) => ({
+                    key: field.key,
+                    value: entry.get_text().trim(),
+                })).filter(({ value }) => value.length > 0);
+                const addArgs = [cliBin(), id, 'account', 'add', name];
+                if (label) addArgs.push('--label', label);
+                const added = spawnSync(addArgs);
+                if (!added.ok) {
+                    showMessage('Could not add this account. Check its name and try again.');
+                    return;
+                }
+                for (const { key, value } of fields) {
+                    const saved = spawnSync([
+                        cliBin(), id, 'account', 'set', name, key, value,
+                    ]);
+                    if (!saved.ok) {
+                        accountsLoaded = true;
+                        loadAccounts();
+                        showMessage('Account added, but a field could not be saved. Check the CLI configuration.');
+                        return;
+                    }
+                }
+                accountName.set_text('');
+                accountLabel.set_text('');
+                for (const { entry } of fieldRows) entry.set_text('');
+                updateAddButton();
+                accountsLoaded = true;
+                loadAccounts();
+                clearMessage();
+                showMessage('Account added.');
+            });
+
+            providerRow.connect('notify::expanded', () => {
+                if (providerRow.get_expanded() && !accountsLoaded) {
+                    accountsLoaded = true;
+                    loadAccounts();
+                }
+            });
         }
         return page;
     }
@@ -329,7 +496,8 @@ export default class UsageMonitorPreferences extends ExtensionPreferences {
         });
         const updateRow = new Adw.ActionRow({
             title: 'Reinstall from the current binary',
-            subtitle: 'On Wayland, log out and back in after updating so the Shell reloads the extension.',
+            subtitle: 'On Wayland, log out and back in after updating extension code; ' +
+                'usage refresh does not require a new session.',
         });
         updateRow.add_suffix(update);
         group.add(updateRow);
@@ -349,10 +517,14 @@ export default class UsageMonitorPreferences extends ExtensionPreferences {
             title: 'Description',
             subtitle: meta.description || '',
         }));
-        group.add(new Adw.ActionRow({
-            title: 'Website',
-            subtitle: meta.url || 'https://github.com/prodesert22/UsageMonitor',
+        const website = meta.url || 'https://github.com/prodesert22/UsageMonitor';
+        const websiteRow = new Adw.ActionRow({ title: 'Website' });
+        websiteRow.add_suffix(new Gtk.LinkButton({
+            uri: website,
+            label: website,
+            valign: Gtk.Align.CENTER,
         }));
+        group.add(websiteRow);
         group.add(new Adw.ActionRow({ title: 'License', subtitle: 'MIT' }));
         return page;
     }

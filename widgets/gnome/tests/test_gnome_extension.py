@@ -26,6 +26,7 @@ EXPECTED_FILES = [
     "metadata.json",
     "extension.js",
     "panel_values.js",
+    "provider_settings.js",
     "prefs.js",
     "stylesheet.css",
     "schemas/org.gnome.shell.extensions.usage-monitor.gschema.xml",
@@ -127,10 +128,75 @@ assert.deepEqual(panelPercentages(summary, 'codex', ['secondary', 'primary']), [
                                   check=False)
             self.assertEqual(proc.returncode, 0, proc.stderr.strip())
 
+    def test_provider_settings_parsers(self):
+        if shutil.which("node") is None:
+            self.skipTest("node not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            module_path = Path(tmp) / "provider_settings.mjs"
+            module_path.write_text((_EXT_DIR / "provider_settings.js").read_text())
+            test_path = Path(tmp) / "test.mjs"
+            test_path.write_text(r"""
+import assert from 'node:assert/strict';
+import {
+    parseProviderAccounts,
+    parseProviderList,
+    providerAuth,
+} from './provider_settings.mjs';
+
+assert.deepEqual(parseProviderList([
+    'openai enabled OpenAI — Usage API',
+    'codex disabled (auto) Codex — Local CLI',
+].join('\n')), [
+    { id: 'openai', displayName: 'OpenAI', enabled: true, state: 'enabled' },
+    { id: 'codex', displayName: 'Codex', enabled: false, state: 'disabled (auto)' },
+]);
+
+assert.deepEqual(parseProviderAccounts([
+    'provider = codex',
+    'state = enabled',
+    '[default] (auto-detected)',
+    '  token = secret-value',
+    '[work] Work',
+    '  disabled',
+    '  api_key = another-secret',
+].join('\n')), [
+    {
+        id: 'default',
+        label: 'Auto-detected credentials',
+        active: true,
+        removable: false,
+        autoDetected: true,
+    },
+    {
+        id: 'work',
+        label: 'Work',
+        active: false,
+        removable: true,
+        autoDetected: false,
+    },
+]);
+assert.equal(providerAuth('openai').fields[0].secret, true);
+assert.equal(providerAuth('deepgram').fields.some(field => field.key === 'project_id'), true);
+assert.deepEqual(providerAuth('codex').requiredFields, ['credentials_path']);
+assert.deepEqual(providerAuth('gemini').requiredAny, ['credentials_path', 'access_token']);
+""")
+            proc = subprocess.run(["node", str(test_path)], cwd=tmp,
+                                  capture_output=True, text=True, timeout=60,
+                                  check=False)
+            self.assertEqual(proc.returncode, 0, proc.stderr.strip())
+
+    def test_provider_ui_has_account_management_and_clickable_about_site(self):
+        prefs = (_EXT_DIR / "prefs.js").read_text()
+        self.assertIn("new Adw.PasswordEntryRow", prefs)
+        self.assertIn("'account', 'set'", prefs)
+        self.assertIn("'account', 'remove'", prefs)
+        self.assertIn("new Gtk.LinkButton", prefs)
+        self.assertIn("uri: website", prefs)
+
     def test_js_syntax_with_node_when_available(self):
         if shutil.which("node") is None:
             self.skipTest("node not installed")
-        for js in ["extension.js", "panel_values.js", "prefs.js"]:
+        for js in ["extension.js", "panel_values.js", "provider_settings.js", "prefs.js"]:
             with tempfile.NamedTemporaryFile(suffix=".mjs", delete=False) as tmp:
                 tmp.write((_EXT_DIR / js).read_bytes())
                 tmp_path = tmp.name

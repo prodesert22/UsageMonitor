@@ -8,6 +8,9 @@ notes live in [`releases/`](releases/).
 ## [Unreleased]
 
 ### Added
+- GNOME Providers preferences now show the full CLI provider catalog and let
+  users enable providers, add/remove named accounts, and save credentials with
+  masked secret fields. The About page website is a clickable link.
 - GNOME Shell extension (45–49) with the KDE widget layout: top-bar
   indicator, one card per provider/account, cost, and Preferences with
   General/Providers/Order/Theme/Updates pages. `usage-monitor-cli widget
