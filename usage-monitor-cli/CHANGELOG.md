@@ -7,6 +7,8 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+## [0.10.4]
+
 ### Added
 - Antigravity provider reads the local `agy` CLI (`agy -p /usage`) as its
   primary source: weekly Gemini / Claude-GPT quota windows with no credentials
@@ -26,6 +28,8 @@ notes live in [`releases/`](releases/).
 - Named extra windows duplicating a primary/secondary/tertiary window are no
   longer emitted (they rendered every value twice in tooltips and the GNOME
   panel list).
+
+See [releases/v0.10.4.md](releases/v0.10.4.md).
 
 ## [0.10.3]
 
