@@ -20,6 +20,8 @@ import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
 
+Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
+
 const WINDOW_LABELS = { primary: 'Session', secondary: 'Weekly', tertiary: 'Monthly' };
 
 function cliBin() {

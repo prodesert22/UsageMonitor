@@ -84,6 +84,8 @@ class GnomePackagingTests(unittest.TestCase):
         self.assertIn("this._widgetTarget = 'gnome'", js)
         self.assertIn("'widget', 'kde'", js,
                       "older CLIs must use the shared KDE widget JSON")
+        self.assertIn("Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async')", js,
+                      "async subprocess output must be promisified before awaiting it")
         self.assertIn("USAGE_MONITOR_BIN", js)
         self.assertIn("usage-monitor-cli not found", js,
                       "missing-CLI notice required for store installs")
