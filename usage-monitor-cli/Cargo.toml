@@ -26,6 +26,8 @@ sha2.workspace = true
 base64.workspace = true
 getrandom.workspace = true
 clap = { version = "4", features = ["derive"] }
+clap_complete = "4"
+clap_mangen = "0.2"
 anyhow = "1"
 async-trait = "0.1"
 include_dir = "0.7"
@@ -35,3 +37,61 @@ wiremock.workspace = true
 pretty_assertions.workspace = true
 tokio-test.workspace = true
 tempfile.workspace = true
+
+# Native distro packaging. Generated completions/man live in `dist-gen/`
+# (package-relative) so deb, rpm, Arch, tarball, AppImage and Flatpak all
+# ship the same files from one `usage-monitor-cli generate-dist dist-gen` run.
+[package.metadata.deb]
+maintainer = "Pedro Antonio Trindade <pedroantonioppms@gmail.com>"
+copyright = "2026, Pedro Antonio Trindade"
+license-file = ["../LICENSE", "0"]
+changelog = "dist-gen/debian/changelog"
+section = "utils"
+priority = "optional"
+depends = "$auto, python3"
+recommends = "kpackagetool6, waybar, gnome-shell"
+suggests = "bash-completion, zsh, fish"
+extended-description = """\
+Monitor AI provider usage from the terminal and Linux desktop widgets. \
+Collects, stores, and displays consumption metrics from AI services \
+without depending on external servers. Ships KDE Plasma 6, Waybar, and \
+GNOME Shell widgets embedded in the binary (install with \
+`usage-monitor-cli widget install`)."""
+assets = [
+  "$auto",
+  ["dist-gen/completions/usage-monitor-cli.bash", "usr/share/bash-completion/completions/usage-monitor-cli", "644"],
+  ["dist-gen/completions/_usage-monitor-cli", "usr/share/zsh/vendor-completions/_usage-monitor-cli", "644"],
+  ["dist-gen/completions/usage-monitor-cli.fish", "usr/share/fish/vendor_completions.d/usage-monitor-cli.fish", "644"],
+  ["dist-gen/man/man1/usage-monitor-cli.1", "usr/share/man/man1/usage-monitor-cli.1", "644"],
+  ["../dist/usage-monitor-cli.desktop", "usr/share/applications/usage-monitor-cli.desktop", "644"],
+  ["../dist/dev.usage_monitor.UsageMonitor.metainfo.xml", "usr/share/metainfo/dev.usage_monitor.UsageMonitor.metainfo.xml", "644"],
+  ["assets/kde/package/contents/images/usage-monitor.png", "usr/share/icons/hicolor/256x256/apps/usage-monitor.png", "644"],
+]
+
+[package.metadata.generate-rpm]
+assets = [
+  { source = "target/release/usage-monitor-cli", dest = "/usr/bin/usage-monitor-cli", mode = "755" },
+  { source = "dist-gen/completions/usage-monitor-cli.bash", dest = "/usr/share/bash-completion/completions/usage-monitor-cli", mode = "644" },
+  { source = "dist-gen/completions/_usage-monitor-cli", dest = "/usr/share/zsh/vendor-completions/_usage-monitor-cli", mode = "644" },
+  { source = "dist-gen/completions/usage-monitor-cli.fish", dest = "/usr/share/fish/vendor_completions.d/usage-monitor-cli.fish", mode = "644" },
+  { source = "dist-gen/man/man1/usage-monitor-cli.1", dest = "/usr/share/man/man1/usage-monitor-cli.1", mode = "644" },
+  { source = "../dist/usage-monitor-cli.desktop", dest = "/usr/share/applications/usage-monitor-cli.desktop", mode = "644" },
+  { source = "../dist/dev.usage_monitor.UsageMonitor.metainfo.xml", dest = "/usr/share/metainfo/dev.usage_monitor.UsageMonitor.metainfo.xml", mode = "644" },
+  { source = "assets/kde/package/contents/images/usage-monitor.png", dest = "/usr/share/icons/hicolor/256x256/apps/usage-monitor.png", mode = "644" },
+  { source = "../LICENSE", dest = "/usr/share/licenses/usage-monitor-cli/LICENSE", mode = "644" },
+  { source = "../README.md", dest = "/usr/share/doc/usage-monitor-cli/README.md", mode = "644" },
+]
+summary = "Monitor AI provider usage from the terminal and Linux desktop widgets"
+license = "MIT"
+# NOTE: top-level `group` is currently ignored by cargo-generate-rpm (<= 0.21):
+# `group` there is per-asset (file owner). The rpm ships Group "Unspecified",
+# which Fedora ignores. Kept for intent / forward compatibility.
+group = "Applications/System"
+
+[package.metadata.generate-rpm.requires]
+openssl-libs = "*"
+python3 = "*"
+
+[package.metadata.generate-rpm.recommends]
+waybar = "*"
+gnome-shell = "*"

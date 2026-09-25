@@ -38,7 +38,19 @@ Full docs live in [`docs/`](docs/README.md):
 
 ## Install
 
-From [crates.io](https://crates.io/crates/usage-monitor-cli):
+The upcoming packaging workflow produces prebuilt Linux packages for each
+[release](https://github.com/prodesert22/UsageMonitor/releases) — `.deb`,
+`.rpm`, Arch `.pkg.tar.zst`, `.AppImage`, Flatpak manifest, and a generic
+`.tar.gz`:
+
+```bash
+sudo dpkg -i usage-monitor-cli_*_amd64.deb          # Debian/Ubuntu
+sudo rpm -i usage-monitor-cli-*.x86_64.rpm          # Fedora/RHEL
+sudo pacman -U usage-monitor-cli-bin-*.pkg.tar.zst  # Arch
+tar -xzf usage-monitor-cli-*.tar.gz && ./usage-monitor-cli-*/install.sh  # anywhere
+```
+
+Or from [crates.io](https://crates.io/crates/usage-monitor-cli):
 
 ```bash
 cargo install usage-monitor-cli

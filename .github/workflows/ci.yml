@@ -51,10 +51,97 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements-dev.txt 2>/dev/null || pip install ruff
+          pip install -r requirements-dev.txt
 
       - name: Ruff lint
         run: ruff check widgets usage-monitor-cli/assets/waybar
 
       - name: Widget tests
         run: python -m unittest discover -s widgets -p 'test_*.py'
+
+  dist-check:
+    name: Packaging (static)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install pyyaml
+        run: pip install pyyaml
+
+      - name: Validate packaging metadata + scripts
+        # Fast regressions; dist-build and flatpak-build exercise real builds.
+        run: ./dist/check.sh --quick
+
+  dist-build:
+    name: Packaging (build and install)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install packaging tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libssl-dev pkg-config dpkg-dev lintian libarchive-tools zstd python3-yaml
+          cargo install --locked cargo-deb cargo-generate-rpm
+      - name: Build and inspect packages
+        run: ./dist/check.sh
+      - name: Build installable artifacts
+        run: ./dist/build-all.sh --out-dir dist/ci-artifacts --skip-appimage --skip-arch --skip-flatpak
+      - name: Build AppImage (required)
+        run: ./dist/appimage/make-appimage.sh --out-dir dist/ci-artifacts
+      - name: Install Debian package
+        run: |
+          lintian --fail-on error dist/ci-artifacts/*.deb
+          sudo apt-get install -y --no-install-recommends ./dist/ci-artifacts/*.deb
+          /usr/bin/usage-monitor-cli list
+      - name: Install RPM in Fedora
+        run: |
+          docker run --rm -v "$PWD/dist/ci-artifacts:/packages:ro" fedora:latest \
+            bash -ec 'dnf install -y /packages/*.rpm && usage-monitor-cli list'
+      - name: Build and install Arch package
+        run: |
+          mkdir pkgbuild
+          cp dist/arch/PKGBUILD dist/ci-artifacts/usage-monitor-cli-*.tar.gz pkgbuild/
+          TARBALL="$(basename pkgbuild/usage-monitor-cli-*.tar.gz)"
+          SHA="$(sha256sum "pkgbuild/$TARBALL" | cut -d' ' -f1)"
+          sed -i "s|^source=.*|source=(\"$TARBALL\")|; s|^sha256sums=.*|sha256sums=(\"$SHA\")|" pkgbuild/PKGBUILD
+          docker run --rm -v "$PWD/pkgbuild:/pkgbuild" -w /pkgbuild archlinux:latest bash -ec '
+            pacman -Syu --noconfirm base-devel python openssl
+            useradd -m builder
+            chown -R builder:builder /pkgbuild
+            su builder -c "makepkg --noconfirm"
+            pacman -U --noconfirm ./*.pkg.tar.zst
+            usage-monitor-cli list
+          '
+
+  flatpak-build:
+    name: Flatpak (offline build)
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Install build tools and SDK
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder zstd python3-yaml
+          flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+          flatpak install --user -y flathub org.freedesktop.Platform//24.08 org.freedesktop.Sdk//24.08 org.freedesktop.Sdk.Extension.rust-stable//24.08
+      - name: Vendor current commit and render local manifest
+        run: |
+          ./dist/flatpak/make-source-tarball.sh --ref HEAD --out-dir dist/ci-flatpak
+          VERSION="$(grep -m1 '^version' Cargo.toml | cut -d'"' -f2)"
+          SOURCE="$PWD/dist/ci-flatpak/flatpak-source-$VERSION.tar.zst"
+          SHA="$(sha256sum "$SOURCE" | cut -d' ' -f1)"
+          ./dist/flatpak/render-manifest.sh --version "$VERSION" --source-sha256 "$SHA" \
+            --source-path "$SOURCE" --out dist/ci-flatpak/manifest.yml
+      - name: Build offline and run
+        run: |
+          flatpak-builder --force-clean --disable-rofiles-fuse --user build-dir dist/ci-flatpak/manifest.yml
+          flatpak-builder --run build-dir dist/ci-flatpak/manifest.yml usage-monitor-cli --help

@@ -7,6 +7,25 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+### Added
+- Linux distribution packaging: per-release `.deb` (cargo-deb), `.rpm`
+  (cargo-generate-rpm), Arch `.pkg.tar.zst` (`dist/arch/PKGBUILD`,
+  `usage-monitor-cli-bin`), `.AppImage`, Flatpak manifest, and a generic
+  `.tar.gz` with binary, completions, man page, and `install.sh`. All formats
+  ship the same payload; see `docs/installation.md` and `dist/README.md`.
+- Hidden `usage-monitor-cli generate-dist <dir>` subcommand that emits shell
+  completions (bash/zsh/fish/powershell/elvish) and the man page from the live
+  clap definition for packagers.
+
+### Fixed
+- Packaging validation now covers real package installation and offline Flatpak
+  builds in CI. Debian dependencies are detected from the build environment;
+  Flatpak includes the Rust SDK extension and exports the app icon correctly.
+- Release jobs use the requested existing tag and publish the GitHub draft only
+  after package validation. Local builds reject output folders with old artifacts.
+- Asset generation no longer depends on valid user configuration. AppImage icon
+  metadata and automatic tool extraction work without FUSE.
+
 ## [0.10.0]
 
 Adds the GNOME Shell extension with local CLI installation, a multi-window

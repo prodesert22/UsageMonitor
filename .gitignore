@@ -1,5 +1,12 @@
 # Rust
 target/
+usage-monitor-cli/dist-gen/
+dist/artifacts/
+dist/ci-artifacts/
+dist/ci-flatpak/
+/pkgbuild/
+/build-dir/
+/.flatpak-builder/
 
 # Python test/runtime cache
 __pycache__/

@@ -1,5 +1,6 @@
 mod cli;
 mod commands;
+mod dist_assets;
 mod dynamic;
 mod fetch;
 mod output;
@@ -14,6 +15,9 @@ use usage_monitor_cli::provider::registry::ProviderRegistry;
 #[tokio::main]
 async fn main() -> Result<()> {
     let cli = Cli::parse();
+    if let Command::GenerateDist { out_dir } = &cli.command {
+        return dist_assets::run_generate_dist(out_dir);
+    }
     let registry = ProviderRegistry::with_defaults();
     let config = AppConfig::load().map_err(|e| anyhow::anyhow!("{}", e))?;
     match cli.command {
@@ -109,6 +113,7 @@ async fn main() -> Result<()> {
             WidgetCmd::Doctor => widget::install::doctor()?,
         },
         Command::Provider(args) => dynamic::handle_dynamic_provider_cmd(&registry, config, args)?,
+        Command::GenerateDist { out_dir } => dist_assets::run_generate_dist(&out_dir)?,
     }
     Ok(())
 }

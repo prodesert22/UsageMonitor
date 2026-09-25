@@ -513,3 +513,27 @@ fn test_enable_unknown_provider_fails() {
     assert!(!out.status.success());
     assert!(stderr(&out).contains("unknown provider 'ghost'"));
 }
+
+#[test]
+fn generate_dist_ignores_user_config_and_emits_packaging_assets() {
+    let env = TestEnv::new("generate-dist-invalid-config");
+    let config = env.config_path();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "not valid TOML [").unwrap();
+    let output_dir = tempfile::tempdir().unwrap();
+    let out = env.run(&["generate-dist", output_dir.path().to_str().unwrap()]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    for file in [
+        "completions/usage-monitor-cli.bash",
+        "completions/_usage-monitor-cli",
+        "completions/usage-monitor-cli.fish",
+        "completions/_usage-monitor-cli.ps1",
+        "completions/usage-monitor-cli.elv",
+        "man/man1/usage-monitor-cli.1",
+        "debian/changelog",
+    ] {
+        let contents = std::fs::read_to_string(output_dir.path().join(file)).unwrap();
+        assert!(contents.contains("usage-monitor-cli"), "{file}");
+    }
+    assert_eq!(std::fs::read_to_string(config).unwrap(), "not valid TOML [");
+}

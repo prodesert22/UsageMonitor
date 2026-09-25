@@ -67,3 +67,15 @@ self-contained — the installer materializes one directory per target and the
 helpers must run from it alone — so behaviour changes that apply to both widgets
 have to be made in both trees, and their tests
 (`widgets/kde/tests`, `widgets/waybar/tests`) are the guard for that.
+
+## Distribution checks
+
+`./dist/check.sh --quick` checks shell syntax, metadata and packaging regression
+tests (`dist/tests`, Python 3.11+ and PyYAML). `./dist/check.sh` additionally
+builds available packages, inspects deb/rpm payloads and checks tarball
+install/uninstall and AppImage execution. Reported skips need separate coverage.
+
+CI runs these checks plus real Debian installation, RPM installation in Fedora,
+Arch build/install in a container, and an offline Flatpak build from the current
+commit with the Rust SDK extension. Release jobs use the selected tag and keep
+the GitHub release in draft until packaging and Flatpak checks succeed.

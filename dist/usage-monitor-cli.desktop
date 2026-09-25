@@ -1,0 +1,10 @@
+[Desktop Entry]
+Name=Usage Monitor
+Comment=Monitor AI provider usage from the terminal
+Exec=usage-monitor-cli list
+Icon=usage-monitor
+Terminal=true
+Type=Application
+Categories=Utility;
+Keywords=ai;usage;monitor;cli;tokens;
+StartupNotify=false

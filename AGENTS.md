@@ -56,6 +56,13 @@ assets/                 Project artwork used by documentation/README
    python -m unittest discover -s widgets -p 'test_*.py'
    ```
 
+   For packaging/dist work, also run `./dist/check.sh --quick` (static
+   metadata + script validation + `dist/tests` regressions, requiring Python
+   3.11+ and PyYAML, same as CI's `dist-check` job); run the full
+   `./dist/check.sh` before a release. CI also runs native package build/install
+   checks and a Flatpak offline build from the current commit; local SKIPs do
+   not count as validation of those formats.
+
 3. **When changing user-visible behavior, update docs.** README, `docs/`,
    `CHANGELOG.md`, and `releases/` must match CLI/widget behavior.
 4. **Release bumps touch every version surface.** For a version bump, update:
@@ -66,7 +73,10 @@ assets/                 Project artwork used by documentation/README
    (`POPUP_VERSION`), `CHANGELOG.md`, and `releases/vX.Y.Z.md`. Also refresh
    the packaged changelog copy (`cp CHANGELOG.md usage-monitor-cli/CHANGELOG.md` —
    `cargo publish` tarballs only ship the package directory, and the
-   `embedded_changelog_matches_workspace` test fails on drift). Delete stray
+   `embedded_changelog_matches_workspace` test fails on drift). Bump
+   `dist/arch/PKGBUILD` (`pkgver`, plus real `sha256sums` from the release
+   `SHA256SUMS` once published); the Flatpak manifest renders automatically
+   from the release workflow. Delete stray
    `__pycache__/` dirs before publishing: cargo's dirty check flags them.
 5. **Provider auth stays explicit and safe.** Never log secrets, tokens, cookies,
    API keys, OAuth credentials, or raw auth files. Tests must use mock data.

@@ -1,0 +1,42 @@
+# Maintainer: Pedro Antonio Trindade <pedroantonioppms@gmail.com>
+# Binary AUR package for usage-monitor-cli. It repacks the generic tarball
+# published on GitHub Releases (see dist/make-tarball.sh), so no Rust
+# toolchain is needed to install it.
+#
+# Bump `pkgver` on every release and refresh the checksums with `updpkgsums`.
+pkgname=usage-monitor-cli-bin
+_pkgbase=usage-monitor-cli
+pkgver=0.10.0
+pkgrel=1
+pkgdesc="Monitor AI provider usage from the terminal and Linux desktop widgets"
+arch=('x86_64')
+url="https://github.com/prodesert22/UsageMonitor"
+license=('MIT')
+depends=('openssl' 'python')
+optdepends=(
+  'bash-completion: bash completions'
+  'zsh: zsh completions'
+  'fish: fish completions'
+  'kpackagetool6: KDE Plasma 6 widget installer backend'
+  'waybar: Waybar widget bar module'
+  'gnome-shell: GNOME Shell extension host'
+)
+provides=("$_pkgbase")
+conflicts=("$_pkgbase")
+# Binary repack: ship the upstream release binary untouched.
+options=('!strip' '!debug')
+source=("$pkgname-$pkgver.tar.gz::https://github.com/prodesert22/UsageMonitor/releases/download/v$pkgver/$_pkgbase-$pkgver-linux-$CARCH.tar.gz")
+sha256sums=('SKIP')
+
+package() {
+  cd "$srcdir/$_pkgbase-$pkgver-linux-$CARCH"
+  install -Dm755 "bin/$_pkgbase" "$pkgdir/usr/bin/$_pkgbase"
+  install -Dm644 "share/man/man1/$_pkgbase.1" "$pkgdir/usr/share/man/man1/$_pkgbase.1"
+  install -Dm644 "share/bash-completion/completions/$_pkgbase" "$pkgdir/usr/share/bash-completion/completions/$_pkgbase"
+  install -Dm644 "share/zsh/vendor-completions/_$_pkgbase" "$pkgdir/usr/share/zsh/site-functions/_$_pkgbase"
+  install -Dm644 "share/fish/vendor_completions.d/$_pkgbase.fish" "$pkgdir/usr/share/fish/vendor_completions.d/$_pkgbase.fish"
+  install -Dm644 "share/applications/$_pkgbase.desktop" "$pkgdir/usr/share/applications/$_pkgbase.desktop"
+  install -Dm644 "share/icons/hicolor/256x256/apps/usage-monitor.png" "$pkgdir/usr/share/icons/hicolor/256x256/apps/usage-monitor.png"
+  install -Dm644 "share/metainfo/dev.usage_monitor.UsageMonitor.metainfo.xml" "$pkgdir/usr/share/metainfo/dev.usage_monitor.UsageMonitor.metainfo.xml"
+  install -Dm644 "LICENSE" "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+}

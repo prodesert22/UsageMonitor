@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="console-application">
+  <id>dev.usage_monitor.UsageMonitor</id>
+  <metadata_license>MIT</metadata_license>
+  <project_license>MIT</project_license>
+  <name>Usage Monitor</name>
+  <summary>Monitor AI provider usage from the terminal</summary>
+  <description>
+    <p>
+      Usage Monitor collects, stores, and displays consumption metrics from AI
+      services like Anthropic Claude, OpenAI, DeepSeek, Groq, and many more —
+      all without depending on external servers.
+    </p>
+    <p>
+      It ships a command-line interface plus reference desktop widgets for
+      KDE Plasma 6, Waybar, and GNOME Shell, embedded in the binary and
+      installed with `usage-monitor-cli widget install`.
+    </p>
+  </description>
+  <provides>
+    <binary>usage-monitor-cli</binary>
+  </provides>
+  <url type="homepage">https://github.com/prodesert22/UsageMonitor</url>
+  <url type="bugtracker">https://github.com/prodesert22/UsageMonitor/issues</url>
+</component>

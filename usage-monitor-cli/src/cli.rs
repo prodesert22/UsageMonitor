@@ -1,3 +1,5 @@
+use std::path::PathBuf;
+
 use clap::{Args, Parser, Subcommand, ValueEnum};
 
 #[derive(Parser)]
@@ -48,6 +50,16 @@ pub(crate) enum Command {
     },
     #[command(subcommand)]
     Widget(WidgetCmd),
+    /// Generate shell completions and the man page into a directory.
+    ///
+    /// Hidden from help: this exists so distro packages (deb/rpm/Arch),
+    /// the generic tarball, AppImage and Flatpak can ship generated
+    /// completions + man without duplicating the clap definition.
+    /// Invoked by `dist/make-tarball.sh` and the release workflow.
+    #[command(hide = true, name = "generate-dist")]
+    GenerateDist {
+        out_dir: PathBuf,
+    },
     #[command(external_subcommand)]
     Provider(Vec<String>),
 }

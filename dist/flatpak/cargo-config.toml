@@ -1,0 +1,10 @@
+# Cargo offline config used inside the Flatpak build sandbox.
+# The release workflow tars the tag source plus `cargo vendor` output as
+# flatpak-source-<version>.tar.zst (see make-source-tarball.sh) and the
+# manifest extracts it so that `vendor/` sits next to Cargo.toml, which is
+# the relative directory referenced below.
+[source.crates-io]
+replace-with = "vendored-sources"
+
+[source.vendored-sources]
+directory = "vendor"
