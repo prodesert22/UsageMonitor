@@ -13,7 +13,7 @@ Download the latest release from
 ### Debian / Ubuntu — `.deb`
 
 ```bash
-sudo dpkg -i usage-monitor-cli_0.10.1-1_amd64.deb
+sudo dpkg -i usage-monitor-cli_0.10.2-1_amd64.deb
 sudo apt-get install -f   # only if dependency errors appear
 ```
 
@@ -24,8 +24,8 @@ widget backends.
 ### Fedora / RHEL / openSUSE — `.rpm`
 
 ```bash
-sudo rpm -i usage-monitor-cli-0.10.1-1.x86_64.rpm
-# or: sudo dnf install ./usage-monitor-cli-0.10.1-1.x86_64.rpm
+sudo rpm -i usage-monitor-cli-0.10.2-1.x86_64.rpm
+# or: sudo dnf install ./usage-monitor-cli-0.10.2-1.x86_64.rpm
 ```
 
 Requires `openssl-libs` + `python3`.
@@ -35,7 +35,7 @@ Requires `openssl-libs` + `python3`.
 Install the binary package from the release:
 
 ```bash
-sudo pacman -U usage-monitor-cli-bin-0.10.1-1-x86_64.pkg.tar.zst
+sudo pacman -U usage-monitor-cli-bin-0.10.2-1-x86_64.pkg.tar.zst
 ```
 
 Or build from the AUR (`usage-monitor-cli-bin` repacks the release tarball,
@@ -52,8 +52,8 @@ makepkg -si
 Any distro with `bash` + `coreutils`:
 
 ```bash
-tar -xzf usage-monitor-cli-0.10.1-linux-x86_64.tar.gz
-cd usage-monitor-cli-0.10.1-linux-x86_64
+tar -xzf usage-monitor-cli-0.10.2-linux-x86_64.tar.gz
+cd usage-monitor-cli-0.10.2-linux-x86_64
 ./install.sh                    # installs to /usr/local (needs sudo)
 ./install.sh --prefix ~/.local  # unprivileged install
 ./install.sh --uninstall        # remove again
@@ -67,8 +67,8 @@ The tarball carries the binary, man page, shell completions
 No install, no root — download, allow execution, run:
 
 ```bash
-chmod +x UsageMonitor-0.10.1-linux-x86_64.AppImage
-./UsageMonitor-0.10.1-linux-x86_64.AppImage list
+chmod +x UsageMonitor-0.10.2-linux-x86_64.AppImage
+./UsageMonitor-0.10.2-linux-x86_64.AppImage list
 ```
 
 For desktop widgets, install a native package or the generic tarball. AppImage

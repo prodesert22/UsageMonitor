@@ -2,7 +2,7 @@
   "uuid": "usage-monitor@usage-monitor.dev",
   "name": "Usage Monitor",
   "description": "Monitor AI provider usage (Claude, Codex, OpenAI, Gemini and more) from the top bar. Requires the usage-monitor-cli binary: https://github.com/prodesert22/UsageMonitor",
-  "version": "0.10.1",
+  "version": "0.10.2",
   "shell-version": ["45", "46", "47", "48", "49"],
   "url": "https://github.com/prodesert22/UsageMonitor",
   "settings-schema": "org.gnome.shell.extensions.usage-monitor"

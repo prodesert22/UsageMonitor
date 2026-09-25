@@ -7,6 +7,26 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+## [0.10.2]
+
+Patch release fixing the v0.10.1 distribution pipeline so the published
+artifacts build and verify end to end.
+
+### Fixed
+- Flatpak manifest generates completions/man into `./um-dist` inside the
+  build tree instead of `/tmp`: flatpak-builder runs each build-command in
+  its own sandbox invocation with a fresh `/tmp`, so files vanished between
+  commands.
+- Flatpak CI job uses `contents: write`: draft releases are invisible to
+  read-only tokens, so artifact download failed with "release not found".
+- Release workflow tolerates a missing `v` prefix and stray whitespace in
+  the tag input (`0.10.1`, `v0.10.1 ` all resolve to `v0.10.1`); genuine
+  garbage still fails validation with a clear error.
+- Flatpak finish-args gain `--share=ipc` (required alongside
+  `fallback-x11`) per flatpak-builder-lint.
+
+See [releases/v0.10.2.md](releases/v0.10.2.md).
+
 ## [0.10.1]
 
 First release with Linux distribution packaging: every GitHub release now

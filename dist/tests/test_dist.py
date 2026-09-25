@@ -70,10 +70,15 @@ class PackagingTests(unittest.TestCase):
 
     def test_release_jobs_checkout_the_selected_tag(self):
         workflow = yaml.safe_load((ROOT / '.github/workflows/release.yml').read_text())
+        # All checkouts must use the normalized TAG (never main): the env
+        # definition tolerates a missing `v` prefix and stray whitespace.
+        tag_expr = workflow['env']['TAG']
+        self.assertIn('github.ref_name', tag_expr)
+        self.assertIn("startsWith(inputs.tag, 'v')", tag_expr)
         for job in workflow['jobs'].values():
             for step in job['steps']:
                 if step.get('uses', '').startswith('actions/checkout@'):
-                    self.assertEqual(step['with']['ref'], '${{ inputs.tag || github.ref_name }}')
+                    self.assertEqual(step['with']['ref'], '${{ env.TAG }}')
 
 
 if __name__ == '__main__':

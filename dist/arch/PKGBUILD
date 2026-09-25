@@ -6,7 +6,7 @@
 # Bump `pkgver` on every release and refresh the checksums with `updpkgsums`.
 pkgname=usage-monitor-cli-bin
 _pkgbase=usage-monitor-cli
-pkgver=0.10.1
+pkgver=0.10.2
 pkgrel=1
 pkgdesc="Monitor AI provider usage from the terminal and Linux desktop widgets"
 arch=('x86_64')
