@@ -128,10 +128,10 @@ export default class UsageMonitorPreferences extends ExtensionPreferences {
         panel.add(pin);
 
         const wins = newGroup(page, 'Windows in the bar text',
-            'Which usage windows compose the bar text and the pinned headline. ' +
-            'Use "provider" or "provider/account" (empty = overall).');
+            'Select which usage windows appear. Use "provider" or "provider/account" ' +
+            'to pin one; empty shows each window’s maximum across providers.');
         const selected = new Set(s.get_strv('bar-windows'));
-        for (const [id, title] of [['primary', 'Session'], ['secondary', 'Weekly'], ['tertiary', 'Monthly']]) {
+        for (const [id, title] of [['primary', 'Session (5h)'], ['secondary', 'Weekly'], ['tertiary', 'Monthly']]) {
             const check = new Adw.SwitchRow({ title, active: selected.has(id) });
             check.connect('notify::active', () => {
                 const cur = new Set(s.get_strv('bar-windows'));

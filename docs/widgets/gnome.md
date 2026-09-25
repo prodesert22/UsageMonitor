@@ -66,8 +66,11 @@ confuses the version shown in Extension Manager.
 
 ## What it shows
 
-- Panel: logo + percentage (or a pinned provider), colored by threshold
-  (accent below 70 %, warning 70–89 %, critical at 90 %+ and bold), dimmed
+- Panel: logo + the selected Session (5h), Weekly, and Monthly percentages,
+  separated by bullets and ordered by window. Without a pin, each value is
+  the highest for that window across providers; a pin limits them to that
+  provider/account. The label uses the highest displayed value for its color
+  (accent below 70 %, warning 70–89 %, critical at 90 %+ and bold), and dims
   while stale. Hidden text mode via **Show bar text**.
 - Popup header: title, summary line (with `· cached/stale` when applicable),
   **Refresh** and **Settings** buttons.
@@ -77,7 +80,7 @@ confuses the version shown in Extension Manager.
 - **Preferences** (top-bar menu → Settings, or Extension Manager):
   - **General** — refresh interval, show bar text, show account email, show
     decimal places, pin to top bar (`provider` or `provider/account`), the
-    Session/Weekly/Monthly windows shown in the bar text, clear cache.
+    Session (5h)/Weekly/Monthly windows shown in the bar text, clear cache.
   - **Providers** — enable/disable toggles (same as
     `usage-monitor-cli enable|disable <provider>`). Named accounts are added
     in a terminal; the page shows the exact commands per auth type

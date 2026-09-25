@@ -30,7 +30,7 @@
     <key name="bar-windows" type="as">
       <default><![CDATA[['primary', 'secondary', 'tertiary']]]></default>
       <summary>Bar windows</summary>
-      <description>Which usage windows compose the bar text and the pinned headline: primary (Session), secondary (Weekly), tertiary (Monthly).</description>
+      <description>Which usage windows compose the bar text and the pinned headline: primary (Session, 5h), secondary (Weekly), tertiary (Monthly).</description>
     </key>
     <key name="provider-order" type="as">
       <default>[]</default>

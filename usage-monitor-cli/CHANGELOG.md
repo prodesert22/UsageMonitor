@@ -24,6 +24,8 @@ notes live in [`releases/`](releases/).
   user-installed CLI binaries over older system copies. The async Gio read is
   promisified so fresh JSON replaces the placeholder cache. Failed live
   refreshes mark cached values as stale and show an error notice.
+- The GNOME top bar now renders every selected usage window, so session (5h)
+  and weekly values are both visible instead of only the overall maximum.
 
 ## [0.9.0]
 

@@ -19,10 +19,9 @@ import * as Main from 'resource:///org/gnome/shell/ui/main.js';
 import * as PanelMenu from 'resource:///org/gnome/shell/ui/panelMenu.js';
 import * as PopupMenu from 'resource:///org/gnome/shell/ui/popupMenu.js';
 import { Extension } from 'resource:///org/gnome/shell/extensions/extension.js';
+import { panelPercentages, windowList } from './panel_values.js';
 
 Gio._promisify(Gio.Subprocess.prototype, 'communicate_utf8_async');
-
-const WINDOW_LABELS = { primary: 'Session', secondary: 'Weekly', tertiary: 'Monthly' };
 
 function cliBin() {
     const override = GLib.getenv('USAGE_MONITOR_BIN');
@@ -84,29 +83,6 @@ function costLabel(cost) {
     if (!Number.isFinite(total)) return '';
     const cur = cost.currency ? `${cost.currency} ` : '';
     return `${cur}${total.toFixed(2)} (30d)`;
-}
-
-function windowList(entry) {
-    const out = [];
-    for (const key of ['primary', 'secondary', 'tertiary']) {
-        const wins = (entry.windows || []).filter(w => {
-            const id = String(w.id || '');
-            return id === key ||
-                (key === 'primary' && /session/i.test(id)) ||
-                (key === 'secondary' && /week/i.test(id)) ||
-                (key === 'tertiary' && /month/i.test(id));
-        });
-        for (const win of wins) {
-            if (win.percentage === undefined || win.percentage === null) continue;
-            out.push({
-                key,
-                label: WINDOW_LABELS[key],
-                percent: Number(win.percentage),
-                reset: win.resets_at || '',
-            });
-        }
-    }
-    return out;
 }
 
 function cacheFile() {
@@ -281,8 +257,15 @@ class UsageMonitorIndicator extends PanelMenu.Button {
             return;
         }
         const showDecimals = this._settings.get_boolean('show-decimals');
-        const pct = this._pinnedPercent();
-        this._label.set_text(showText ? pctLabel(pct, showDecimals) : '');
+        const percentages = panelPercentages(
+            this._summary,
+            this._settings.get_string('pinned-provider'),
+            this._settings.get_strv('bar-windows'));
+        const values = percentages.length ? percentages : [this._pinnedPercent()];
+        const pct = Math.max(...values);
+        this._label.set_text(showText
+            ? values.map(value => pctLabel(value, showDecimals)).join(' • ')
+            : '');
         const stale = this._summary.class === 'stale' || this._summary._stale === true;
         this._label.style_class = `um-panel-text um-${levelFor(pct)}` +
             (stale ? ' um-stale' : '');

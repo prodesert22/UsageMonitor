@@ -25,6 +25,7 @@ _SCHEMA = _EXT_DIR / "schemas" / "org.gnome.shell.extensions.usage-monitor.gsche
 EXPECTED_FILES = [
     "metadata.json",
     "extension.js",
+    "panel_values.js",
     "prefs.js",
     "stylesheet.css",
     "schemas/org.gnome.shell.extensions.usage-monitor.gschema.xml",
@@ -91,11 +92,45 @@ class GnomePackagingTests(unittest.TestCase):
                       "missing-CLI notice required for store installs")
         self.assertIn("GObject.registerClass", js,
                       "GObject subclasses must be registered or construction throws")
+        self.assertIn("panelPercentages(", js,
+                      "the panel must render the configured rate windows")
+        self.assertIn("get_strv('bar-windows')", js)
+
+    def test_panel_percentages_include_each_selected_window(self):
+        if shutil.which("node") is None:
+            self.skipTest("node not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            module_path = Path(tmp) / "panel_values.mjs"
+            module_path.write_text((_EXT_DIR / "panel_values.js").read_text())
+            test_path = Path(tmp) / "test.mjs"
+            test_path.write_text("""
+import assert from 'node:assert/strict';
+import { panelPercentages } from './panel_values.mjs';
+
+const summary = { providers: [
+    { provider_id: 'codex', windows: [
+        { id: 'primary', percentage: 42 },
+        { id: 'secondary', percentage: 84 },
+    ] },
+    { provider_id: 'claude', windows: [
+        { id: 'primary', percentage: 70 },
+        { id: 'secondary', percentage: 20 },
+    ] },
+] };
+assert.deepEqual(panelPercentages({ providers: [summary.providers[0]] }, '',
+    ['secondary', 'primary']), [42, 84]);
+assert.deepEqual(panelPercentages(summary, '', ['secondary', 'primary']), [70, 84]);
+assert.deepEqual(panelPercentages(summary, 'codex', ['secondary', 'primary']), [42, 84]);
+""")
+            proc = subprocess.run(["node", str(test_path)], cwd=tmp,
+                                  capture_output=True, text=True, timeout=60,
+                                  check=False)
+            self.assertEqual(proc.returncode, 0, proc.stderr.strip())
 
     def test_js_syntax_with_node_when_available(self):
         if shutil.which("node") is None:
             self.skipTest("node not installed")
-        for js in ["extension.js", "prefs.js"]:
+        for js in ["extension.js", "panel_values.js", "prefs.js"]:
             with tempfile.NamedTemporaryFile(suffix=".mjs", delete=False) as tmp:
                 tmp.write((_EXT_DIR / js).read_bytes())
                 tmp_path = tmp.name
