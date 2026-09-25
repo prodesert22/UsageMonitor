@@ -20,7 +20,9 @@ Clicking it opens the full popup, with one card per provider/account:
   visible on thin panels.
 - Full popup (usage only) with one card per provider/account, an overall
   percentage, and a progress bar for every usage window (Session/Weekly/Monthly)
-  returned by the provider, plus reset times and error/stale indicators.
+  returned by the provider, plus reset times and error/stale indicators. Bars
+  show the real window names from the CLI payload (e.g. `Gemini weekly`,
+  `Session (5h)`) instead of the generic slot names.
 - Popup toolbar: Refresh, Cost, **Pin** (keep popup open), and **Settings** (opens
   the native KDE configuration window).
 - **Settings live in the native KDE config dialog** (right-click → Configure, or

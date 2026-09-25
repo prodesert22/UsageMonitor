@@ -256,6 +256,24 @@ class BarWindowTests(unittest.TestCase):
         entries = um.fetch_entries(runner=lambda args: proc(json.dumps(payload)))
         self.assertEqual(entries[0]["usage"]["primary"]["usedPercent"], 33.0)
 
+    def test_labeled_windows_keep_real_names(self):
+        # Antigravity weekly buckets: the card/tooltip show "Gemini weekly",
+        # not the generic slot names.
+        payload = {"providers": [
+            {"provider_id": "antigravity", "display_name": "Antigravity",
+             "windows": [
+                 {"id": "primary", "label": "Gemini weekly", "percentage": 3.0},
+                 {"id": "secondary", "label": "Claude/GPT weekly", "percentage": 0.0},
+             ]},
+        ]}
+        entries = um.fetch_entries(runner=lambda args: proc(json.dumps(payload)))
+        self.assertEqual(entries[0]["usage"]["primary"]["label"], "Gemini weekly")
+        self.assertEqual(entries[0]["usage"]["secondary"]["label"], "Claude/GPT weekly")
+        summary = um.summarize(entries, pinned_provider="antigravity")
+        self.assertEqual(summary["text"], "3% • 0%")
+        self.assertIn("Antigravity gemini weekly: 3%", summary["tooltip"])
+        self.assertIn("Antigravity claude/gpt weekly: 0%", summary["tooltip"])
+
     def test_bar_text_respects_enabled_windows(self):
         entries = [
             {"provider": "kimi", "account": "",

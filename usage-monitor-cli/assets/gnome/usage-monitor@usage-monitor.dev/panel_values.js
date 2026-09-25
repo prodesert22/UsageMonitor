@@ -15,7 +15,10 @@ export function windowList(entry) {
             if (win.percentage === undefined || win.percentage === null) continue;
             const percent = Number(win.percentage);
             if (!Number.isFinite(percent)) continue;
-            out.push({ key, label: WINDOW_LABELS[key], percent, reset: win.resets_at || '' });
+            // Real window name from the CLI payload (e.g. "Gemini weekly");
+            // the slot name covers older cached payloads.
+            const label = win.label || WINDOW_LABELS[key];
+            out.push({ key, label, percent, reset: win.resets_at || '' });
         }
     }
     return out;

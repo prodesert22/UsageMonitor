@@ -230,7 +230,9 @@ PlasmoidItem {
             if (win && win.usedPercent !== undefined && win.usedPercent !== null) {
                 result.push({
                     "key": key,
-                    "label": labels[key],
+                    // Real window name from the CLI payload (e.g. "Gemini
+                    // weekly"); the slot name covers older cached payloads.
+                    "label": win.label || labels[key],
                     "percent": Number(win.usedPercent),
                     "reset": win.resetDescription || ""
                 })

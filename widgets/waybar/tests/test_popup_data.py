@@ -276,6 +276,25 @@ class FetchTests(unittest.TestCase):
         self.assertIn("Codex additional: 0%", summary["tooltip"])
         self.assertEqual(summary["pinnedPercent"], 98.0)
 
+    def test_labeled_windows_keep_real_names(self):
+        # Antigravity weekly buckets: the card/tooltip show "Gemini weekly",
+        # not the generic slot names.
+        payload = {"providers": [{"provider_id": "antigravity", "windows": [
+            {"id": "primary", "label": "Gemini weekly", "percentage": 3.0},
+            {"id": "secondary", "label": "Claude/GPT weekly", "percentage": 0.0},
+        ]}]}
+
+        def runner(args):
+            return subprocess.CompletedProcess(args, 0, json.dumps(payload), "")
+
+        entries = data.fetch_entries(runner)
+        self.assertEqual(entries[0]["usage"]["primary"]["label"], "Gemini weekly")
+        self.assertEqual(entries[0]["usage"]["secondary"]["label"], "Claude/GPT weekly")
+        summary = data.summarize(entries, "antigravity")
+        self.assertEqual(summary["text"], "3% • 0%")
+        self.assertIn("Antigravity gemini weekly: 3%", summary["tooltip"])
+        self.assertIn("Antigravity claude/gpt weekly: 0%", summary["tooltip"])
+
     def test_bar_text_respects_enabled_windows(self):
         entries = [
             {"provider": "kimi", "account": "",

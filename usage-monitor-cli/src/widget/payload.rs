@@ -32,26 +32,22 @@ pub(super) fn widget_targets(
 }
 
 pub(super) fn provider_from_snapshot(snapshot: &UsageSnapshot) -> WidgetProvider {
-    let windows = snapshot
-        .primary_rate_window
+    let slotted: Vec<(String, &RateWindow)> = [
+        ("primary", &snapshot.primary_rate_window),
+        ("secondary", &snapshot.secondary_rate_window),
+        ("tertiary", &snapshot.tertiary_rate_window),
+    ]
+    .into_iter()
+    .filter_map(|(id, window)| window.as_ref().map(|w| (id.to_string(), w)))
+    .collect();
+    let windows = slotted
         .iter()
-        .map(|w| ("primary".to_string(), w))
-        .chain(
-            snapshot
-                .secondary_rate_window
-                .iter()
-                .map(|w| ("secondary".to_string(), w)),
-        )
-        .chain(
-            snapshot
-                .tertiary_rate_window
-                .iter()
-                .map(|w| ("tertiary".to_string(), w)),
-        )
+        .map(|(id, window)| (id.clone(), *window))
         .chain(
             snapshot
                 .extra_rate_windows
                 .iter()
+                .filter(|named| !duplicates_slotted(&slotted, named))
                 .map(|named| (named.id.clone(), &named.window)),
         )
         .map(|(id, window)| WidgetWindow::from_window(id, window))
@@ -140,6 +136,21 @@ pub(super) fn provider_tooltip_line(provider: &WidgetProvider) -> String {
     format!("{title}: {parts}")
 }
 
+/// True when a named extra window repeats a slotted window (same label,
+/// percentage, and reset): providers such as Antigravity list their quota
+/// buckets both as primary/secondary windows and as named extras, and the
+/// extensions would otherwise render each value twice.
+fn duplicates_slotted(
+    slotted: &[(String, &RateWindow)],
+    named: &usage_monitor_cli::NamedRateWindow,
+) -> bool {
+    slotted.iter().any(|(_, window)| {
+        window.label == named.label
+            && ratio_percentage(window.usage_ratio) == ratio_percentage(named.window.usage_ratio)
+            && window.resets_at == named.window.resets_at
+    })
+}
+
 pub(super) fn window_from_rate(id: String, window: &RateWindow) -> WidgetWindow {
     WidgetWindow {
         id,
@@ -202,6 +213,58 @@ fn provider_display_name(provider_id: &str) -> String {
         "mistral" => "Mistral".into(),
         "cursor" => "Cursor".into(),
         "gemini" => "Gemini".into(),
+        "antigravity" => "Antigravity".into(),
         other => other.replace(['-', '_'], " ").to_string(),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use usage_monitor_cli::NamedRateWindow;
+
+    fn snapshot_with_duplicate_extra() -> UsageSnapshot {
+        let mut snapshot = UsageSnapshot::new("antigravity");
+        let mut primary = RateWindow::new(3, 100, "Gemini weekly", 10080);
+        primary.resets_at = chrono::DateTime::parse_from_rfc3339("2026-10-02T19:05:01Z")
+            .ok()
+            .map(|d| d.with_timezone(&chrono::Utc));
+        snapshot.primary_rate_window = Some(primary.clone());
+        snapshot.extra_rate_windows = vec![
+            NamedRateWindow {
+                id: "antigravity-quota-summary-gemini-weekly".into(),
+                label: primary.label.clone(),
+                window: primary,
+            },
+            NamedRateWindow {
+                id: "antigravity-quota-summary-3p-weekly".into(),
+                label: "Claude/GPT weekly".into(),
+                window: RateWindow::new(0, 100, "Claude/GPT weekly", 10080),
+            },
+        ];
+        snapshot
+    }
+
+    #[test]
+    fn test_duplicate_extra_windows_are_dropped() {
+        let provider = provider_from_snapshot(&snapshot_with_duplicate_extra());
+        let ids: Vec<&str> = provider.windows.iter().map(|w| w.id.as_str()).collect();
+        assert_eq!(ids, ["primary", "antigravity-quota-summary-3p-weekly"]);
+        // Labels ride along so extensions can show real window names.
+        assert_eq!(provider.windows[0].label, "Gemini weekly");
+    }
+
+    #[test]
+    fn test_distinct_extra_windows_are_kept() {
+        let mut snapshot = UsageSnapshot::new("codex");
+        snapshot.primary_rate_window = Some(RateWindow::new(10, 100, "Session (5h)", 300));
+        snapshot.extra_rate_windows = vec![NamedRateWindow {
+            id: "Additional".into(),
+            label: "Additional".into(),
+            window: RateWindow::new(0, 100, "Additional", 0),
+        }];
+        let provider = provider_from_snapshot(&snapshot);
+        let ids: Vec<&str> = provider.windows.iter().map(|w| w.id.as_str()).collect();
+        assert_eq!(ids, ["primary", "Additional"]);
     }
 }

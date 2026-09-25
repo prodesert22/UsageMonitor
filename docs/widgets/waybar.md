@@ -156,7 +156,8 @@ What it shows — the same layout as the KDE Plasma widget:
   **Settings** and **Close**;
 - one card per provider/account: name, headline percentage, account line,
   Session/Weekly/Monthly bars with reset times, stale markers, per-provider
-  errors and 30-day cost once fetched;
+  errors and 30-day cost once fetched (bars show the real window names from
+  the CLI payload, e.g. `Gemini weekly`, instead of the generic slot names);
 - a settings window with four pages:
   - **General** — refresh interval, show account email, keep-open default, popup
     position, pinned provider or account (`provider`, or `provider/account`

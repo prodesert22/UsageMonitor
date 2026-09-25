@@ -7,6 +7,26 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+### Added
+- Antigravity provider reads the local `agy` CLI (`agy -p /usage`) as its
+  primary source: weekly Gemini / Claude-GPT quota windows with no credentials
+  file required, auto-enabling when `agy` is installed and signed in.
+- Antigravity plan label resolves best-effort from `loadCodeAssist`
+  (`paidTier.name` such as `Plus` wins, then `planInfo.planType`, then the
+  current tier), mirroring CodexBar.
+
+### Changed
+- Antigravity remote fallback plan label is now `Antigravity` (was
+  `Code Assist`) for consistency across sources.
+- Widget cards and tooltips (KDE, Waybar, GNOME) show the real window names
+  from the CLI payload (e.g. `Gemini weekly`, `Claude/GPT weekly`,
+  `Session (5h)`) instead of the generic Session/Weekly/Monthly slot names.
+
+### Fixed
+- Named extra windows duplicating a primary/secondary/tertiary window are no
+  longer emitted (they rendered every value twice in tooltips and the GNOME
+  panel list).
+
 ## [0.10.3]
 
 Release now ships a prebuilt single-file `.flatpak` bundle, completing the

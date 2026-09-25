@@ -75,6 +75,7 @@ PROVIDER_NAMES = {
     "mistral": "Mistral",
     "cursor": "Cursor",
     "gemini": "Gemini",
+    "antigravity": "Antigravity",
 }
 WINDOW_LABELS = {"primary": "Session", "secondary": "Weekly", "tertiary": "Monthly"}
 WINDOW_SLOTS = ("primary", "secondary", "tertiary")
@@ -85,6 +86,7 @@ CONNECT_HINTS = {
     "anthropic": "Set an API key: `usage-monitor-cli anthropic set api_key sk-…`.",
     "openai": "Set an API key: `usage-monitor-cli openai set api_key sk-…`.",
     "gemini": "Run `gcloud auth application-default login`, then refresh.",
+    "antigravity": "Run `agy` and sign in, then refresh. Quotas are read from the local CLI.",
     "opencode-go": "Set an API key: `usage-monitor-cli opencode-go set token <key>` (auto-detected from ~/.local/share/opencode/auth.json).",
     "kimi": "Set a kimi-auth token: `usage-monitor-cli kimi set token <kimi-auth-jwt>`.",
 }
@@ -118,8 +120,9 @@ _OAUTH_SETUP = {
         "or paste an access token from `gcloud auth print-access-token`."
     ),
     "antigravity": (
-        "Point Credentials path at the account's oauth_creds.json. Token refresh may\n"
-        "need client_id/client_secret (set them as extra account keys)."
+        "Sign in with `agy`; quotas are read from the local CLI, no file needed.\n"
+        "For the OAuth fallback, point Credentials path at oauth_creds.json (refresh may\n"
+        "need client_id/client_secret as extra account keys)."
     ),
 }
 
@@ -980,6 +983,9 @@ def _entry_from_widget_provider(item: dict[str, Any]) -> dict[str, Any]:
             "usedPercent": _percent(window.get("percentage")) or 0.0,
             "resetsAt": None,
             "resetDescription": str(window.get("resets_at") or ""),
+            # Real window name from the CLI payload (e.g. "Gemini weekly");
+            # the QML/tooltip fall back to the slot name when absent.
+            "label": str(window.get("label") or ""),
         }
         if wid in WINDOW_SLOTS and wid not in usage:
             usage[wid] = slot
@@ -1151,12 +1157,13 @@ def tooltip_lines(entries: list[dict[str, Any]]) -> list[str]:
             continue
         usage_obj = entry.get("usage")
         usage = usage_obj if isinstance(usage_obj, dict) else {}
-        for key, label in WINDOW_LABELS.items():
+        for key, fallback in WINDOW_LABELS.items():
             window_obj = usage.get(key)
             window = window_obj if isinstance(window_obj, dict) else None
             percent = window_percent(entry, key)
             if percent is None:
                 continue
+            label = str((window or {}).get("label") or fallback)
             suffix = reset_text(window)
             stale = " (stale)" if entry.get("stale") else ""
             lines.append(f"{name} {label.lower()}: {pct_label(percent)}" + (f" — {suffix}" if suffix else "") + stale)
