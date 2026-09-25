@@ -1,5 +1,6 @@
+use std::io::Write;
 use std::path::PathBuf;
-use std::process::{Command, Output};
+use std::process::{Command, Output, Stdio};
 
 pub struct TestEnv {
     home: PathBuf,
@@ -25,6 +26,27 @@ impl TestEnv {
             cmd.env_remove(key);
         }
         cmd.output().expect("run binary")
+    }
+
+    pub fn run_with_stdin(&self, args: &[&str], input: &str) -> Output {
+        let mut cmd = Command::new(env!("CARGO_BIN_EXE_usage-monitor-cli"));
+        cmd.args(args)
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .env("HOME", &self.home)
+            .env("XDG_CONFIG_HOME", self.home.join(".config"));
+        for key in ENV_VARS_TO_CLEAR {
+            cmd.env_remove(key);
+        }
+        let mut child = cmd.spawn().expect("run binary");
+        child
+            .stdin
+            .take()
+            .expect("stdin")
+            .write_all(input.as_bytes())
+            .expect("write stdin");
+        child.wait_with_output().expect("collect binary output")
     }
 
     pub fn config_path(&self) -> PathBuf {

@@ -160,12 +160,31 @@ fn test_provider_config_set_show_unset() {
     );
 
     let out = env.run(&["opencode-go", "show"]);
-    assert!(stdout(&out).contains("token = session="));
+    assert!(stdout(&out).contains("token = (redacted, 27 chars)"));
     assert!(!stdout(&out).contains("secret-cookie-value"));
 
     env.run(&["opencode-go", "unset", "token"]);
     let out = env.run(&["opencode-go", "show"]);
     assert!(stdout(&out).contains("provider = opencode-go"));
+}
+
+#[test]
+fn test_account_set_stdin_keeps_secret_out_of_output_and_saves_it() {
+    let env = TestEnv::new("account-set-stdin");
+    let secret = "stdin-only-secret-value";
+    assert!(
+        env.run(&["openai", "account", "add", "work"])
+            .status
+            .success()
+    );
+    let out = env.run_with_stdin(
+        &["openai", "account", "set-stdin", "work", "api_key"],
+        secret,
+    );
+    assert!(out.status.success(), "stderr: {}", stderr(&out));
+    assert!(!stdout(&out).contains(secret));
+    let raw = std::fs::read_to_string(env.config_path()).unwrap();
+    assert!(raw.contains(&format!("api_key = \"{secret}\"")));
 }
 
 #[test]

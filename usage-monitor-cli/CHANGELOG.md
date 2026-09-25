@@ -20,6 +20,10 @@ notes live in [`releases/`](releases/).
   CLI the popup shows a guided install notice instead of failing.
 
 ### Fixed
+- GNOME account setup now passes credentials to the CLI through stdin, keeping
+  them out of process arguments. Theme preferences now apply their palette,
+  opacity, bar height, and corner radius to the popup. Explicit accounts whose
+  labels include “auto-detected” retain their Remove action.
 - GNOME popup cards and usage bars now fill the available menu width, with
   smaller text closer to the KDE widget. The panel percentage is vertically
   aligned with the icon. When an older CLI lacks `widget gnome`, the extension

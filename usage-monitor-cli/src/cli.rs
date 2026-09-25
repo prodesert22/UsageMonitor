@@ -152,6 +152,11 @@ pub(crate) enum AccountCmd {
         key: String,
         value: String,
     },
+    /// Read a config value from stdin instead of exposing it in the process arguments.
+    SetStdin {
+        name: String,
+        key: String,
+    },
     Unset {
         name: String,
         key: String,

@@ -38,11 +38,12 @@ function cliBin() {
     return 'usage-monitor-cli';
 }
 
-function spawnSync(argv) {
+function spawnSync(argv, input = null) {
     try {
-        const proc = Gio.Subprocess.new(argv,
-            Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE);
-        const [ok, stdout, stderr] = proc.communicate_utf8(null, null);
+        let flags = Gio.SubprocessFlags.STDOUT_PIPE | Gio.SubprocessFlags.STDERR_PIPE;
+        if (input !== null) flags |= Gio.SubprocessFlags.STDIN_PIPE;
+        const proc = Gio.Subprocess.new(argv, flags);
+        const [ok, stdout, stderr] = proc.communicate_utf8(input, null);
         return { ok: ok && proc.get_exit_status() === 0, out: stdout || '', err: stderr || '' };
     } catch (e) {
         return { ok: false, out: '', err: String(e && e.message || e) };
@@ -332,8 +333,8 @@ export default class UsageMonitorPreferences extends ExtensionPreferences {
                 }
                 for (const { key, value } of fields) {
                     const saved = spawnSync([
-                        cliBin(), id, 'account', 'set', name, key, value,
-                    ]);
+                        cliBin(), id, 'account', 'set-stdin', name, key,
+                    ], value);
                     if (!saved.ok) {
                         accountsLoaded = true;
                         loadAccounts();

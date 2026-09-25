@@ -27,6 +27,7 @@ EXPECTED_FILES = [
     "extension.js",
     "panel_values.js",
     "provider_settings.js",
+    "theme.js",
     "prefs.js",
     "stylesheet.css",
     "schemas/org.gnome.shell.extensions.usage-monitor.gschema.xml",
@@ -175,6 +176,13 @@ assert.deepEqual(parseProviderAccounts([
         autoDetected: false,
     },
 ]);
+assert.deepEqual(parseProviderAccounts('[work] Auto-detected work'), [{
+    id: 'work',
+    label: 'Auto-detected work',
+    active: true,
+    removable: true,
+    autoDetected: false,
+}]);
 assert.equal(providerAuth('openai').fields[0].secret, true);
 assert.equal(providerAuth('deepgram').fields.some(field => field.key === 'project_id'), true);
 assert.deepEqual(providerAuth('codex').requiredFields, ['credentials_path']);
@@ -188,15 +196,51 @@ assert.deepEqual(providerAuth('gemini').requiredAny, ['credentials_path', 'acces
     def test_provider_ui_has_account_management_and_clickable_about_site(self):
         prefs = (_EXT_DIR / "prefs.js").read_text()
         self.assertIn("new Adw.PasswordEntryRow", prefs)
-        self.assertIn("'account', 'set'", prefs)
+        self.assertIn("'account', 'set-stdin'", prefs)
+        self.assertNotIn("'account', 'set', name, key, value", prefs)
         self.assertIn("'account', 'remove'", prefs)
         self.assertIn("new Gtk.LinkButton", prefs)
         self.assertIn("uri: website", prefs)
+        extension = (_EXT_DIR / "extension.js").read_text()
+        for key in ["theme-mode", "theme-builtin", "theme-opacity",
+                    "theme-custom", "bar-height", "corner-radius"]:
+            self.assertIn(key, extension)
+        self.assertIn("resolveTheme", extension)
+
+    def test_theme_resolution(self):
+        if shutil.which("node") is None:
+            self.skipTest("node not installed")
+        with tempfile.TemporaryDirectory() as tmp:
+            module_path = Path(tmp) / "theme.mjs"
+            module_path.write_text((_EXT_DIR / "theme.js").read_text())
+            test_path = Path(tmp) / "test.mjs"
+            test_path.write_text("""
+import assert from 'node:assert/strict';
+import { resolveTheme } from './theme.mjs';
+
+assert.equal(resolveTheme('system', 'macos-dark', {}, 0.8, 7, 5).colors, null);
+assert.equal(resolveTheme('light', '', {}, 1, 6, 4).colors.background, '#f5f5f7');
+assert.equal(resolveTheme('builtin', 'nord', {}, 1, 6, 4).colors.accent, '#88c0d0');
+const custom = resolveTheme('custom', '', {
+    accent: '#abcdef',
+    text: 'invalid-css',
+}, 3, 20, -1);
+assert.equal(custom.colors.accent, '#abcdef');
+assert.equal(custom.colors.text, '#f5f5f7');
+assert.deepEqual(
+    { opacity: custom.opacity, barHeight: custom.barHeight, cornerRadius: custom.cornerRadius },
+    { opacity: 1, barHeight: 16, cornerRadius: 0 },
+);
+""")
+            proc = subprocess.run(["node", str(test_path)], cwd=tmp,
+                                  capture_output=True, text=True, timeout=60,
+                                  check=False)
+            self.assertEqual(proc.returncode, 0, proc.stderr.strip())
 
     def test_js_syntax_with_node_when_available(self):
         if shutil.which("node") is None:
             self.skipTest("node not installed")
-        for js in ["extension.js", "panel_values.js", "provider_settings.js", "prefs.js"]:
+        for js in ["extension.js", "panel_values.js", "provider_settings.js", "theme.js", "prefs.js"]:
             with tempfile.NamedTemporaryFile(suffix=".mjs", delete=False) as tmp:
                 tmp.write((_EXT_DIR / js).read_bytes())
                 tmp_path = tmp.name

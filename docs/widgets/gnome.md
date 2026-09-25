@@ -83,8 +83,9 @@ confuses the version shown in Extension Manager.
     Session (5h)/Weekly/Monthly windows shown in the bar text, clear cache.
   - **Providers** — the full provider catalog comes from the CLI. Enable or
     disable providers, add/remove named accounts, and enter their credentials
-    in the extension; secret fields are masked. OAuth sign-ins that need a
-    provider CLI still show the required setup steps.
+    in the extension; secret fields are masked and are sent to the CLI through
+    stdin rather than process arguments. OAuth sign-ins that need a provider
+    CLI still show the required setup steps.
   - **Order** — reorder the provider cards (empty = CLI order).
   - **Theme** — follow the GNOME color-scheme, light/dark palettes, a
     bundled theme (macOS Dark/Light, Nord, Dracula, Tokyo Night), or a

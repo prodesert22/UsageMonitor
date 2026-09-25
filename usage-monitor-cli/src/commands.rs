@@ -1,4 +1,5 @@
 use anyhow::Result;
+use std::io::Read;
 use usage_monitor_cli::ProviderState;
 use usage_monitor_cli::config::{AppConfig, DEFAULT_ACCOUNT};
 use usage_monitor_cli::provider::gemini_oauth::GeminiOAuth;
@@ -16,12 +17,30 @@ pub(crate) fn state_label(state: ProviderState) -> &'static str {
 }
 
 pub(crate) fn mask_value(key: &str, value: &str) -> String {
-    let secret = ["cookie", "api_key", "token", "access_token"].contains(&key);
-    if secret && value.chars().count() > 12 {
-        let prefix: String = value.chars().take(8).collect();
-        format!("{}… ({} chars)", prefix, value.chars().count())
+    let secret = [
+        "cookie",
+        "api_key",
+        "token",
+        "access_token",
+        "client_secret",
+    ]
+    .contains(&key);
+    if secret {
+        format!("(redacted, {} chars)", value.chars().count())
     } else {
         value.to_string()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::mask_value;
+
+    #[test]
+    fn masks_secret_values_without_a_prefix() {
+        let value = "client-secret-value";
+        assert_eq!(mask_value("client_secret", value), "(redacted, 19 chars)");
+        assert_eq!(mask_value("api_key", "short"), "(redacted, 5 chars)");
     }
 }
 
@@ -232,6 +251,14 @@ pub(crate) fn handle_account_cmd(
             Ok(())
         }
         AccountCmd::Set { name, key, value } => {
+            config.set_account_config(provider_id, &name, &key, &value);
+            print_config_value(provider_id, &name, &key, &value, &config)
+        }
+        AccountCmd::SetStdin { name, key } => {
+            let mut value = String::new();
+            std::io::stdin()
+                .read_to_string(&mut value)
+                .map_err(|e| anyhow::anyhow!("cannot read account value from stdin: {}", e))?;
             config.set_account_config(provider_id, &name, &key, &value);
             print_config_value(provider_id, &name, &key, &value, &config)
         }

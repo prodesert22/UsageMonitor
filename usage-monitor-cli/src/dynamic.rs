@@ -74,6 +74,7 @@ fn print_account_help(provider_id: &str) {
     println!("  add <name> [--label <l>]   Add an account");
     println!("  remove <name>              Remove an account");
     println!("  set <name> <key> <value>   Set a config value on an account");
+    println!("  set-stdin <name> <key>     Read a config value from stdin");
     println!("  unset <name> <key>         Remove a config key from an account");
     println!("  enable <name>              Enable an account");
     println!("  disable <name>             Disable an account");
@@ -86,6 +87,7 @@ fn print_account_sub_help(provider_id: &str, sub: &str) {
         "add" => "account add <name> [--label <label>]",
         "remove" => "account remove <name>",
         "set" => "account set <name> <key> <value>",
+        "set-stdin" => "account set-stdin <name> <key>",
         "unset" => "account unset <name> <key>",
         "enable" => "account enable <name>",
         "disable" => "account disable <name>",
@@ -112,6 +114,7 @@ fn print_provider_help(provider_id: &str) {
     println!("  account add <name> [--label <l>]   Add an account");
     println!("  account remove <name>              Remove an account");
     println!("  account set <name> <key> <value>   Set a config value on an account");
+    println!("  account set-stdin <name> <key>     Read a config value from stdin");
     println!("  account unset <name> <key>         Remove a config key from an account");
     println!("  account enable <name>              Enable an account");
     println!("  account disable <name>             Disable an account");
@@ -176,6 +179,13 @@ fn parse_account_cmd(provider_id: &str, args: &[String]) -> Result<AccountCmd> {
             }),
             _ => anyhow::bail!("usage: {} account set <name> <key> <value>", provider_id),
         },
+        "set-stdin" => match rest {
+            [name, key] => Ok(AccountCmd::SetStdin {
+                name: name.clone(),
+                key: key.clone(),
+            }),
+            _ => anyhow::bail!("usage: {} account set-stdin <name> <key>", provider_id),
+        },
         "unset" => match rest {
             [name, key] => Ok(AccountCmd::Unset {
                 name: name.clone(),
@@ -196,7 +206,7 @@ fn parse_account_cmd(provider_id: &str, args: &[String]) -> Result<AccountCmd> {
             _ => anyhow::bail!("usage: {} account auto <name>", provider_id),
         },
         _ => anyhow::bail!(
-            "unknown account command '{}' for provider '{}'; expected list, add, remove, set, unset, enable, disable, or auto",
+            "unknown account command '{}' for provider '{}'; expected list, add, remove, set, set-stdin, unset, enable, disable, or auto",
             cmd,
             provider_id
         ),

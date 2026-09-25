@@ -107,7 +107,7 @@ export function parseProviderAccounts(output) {
         if (heading) {
             const [, id, labelText] = heading;
             const rawLabel = (labelText || id).trim();
-            const autoDetected = /auto-detected/i.test(rawLabel);
+            const autoDetected = id === 'default' && rawLabel === '(auto-detected)';
             const label = autoDetected ? 'Auto-detected credentials' : rawLabel;
             current = {
                 id,
