@@ -7,6 +7,24 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+## [0.10.3]
+
+Release now ships a prebuilt single-file `.flatpak` bundle, completing the
+distribution matrix (deb, rpm, Arch, AppImage, Flatpak, tarball).
+
+### Added
+- Prebuilt `UsageMonitor-<version>-linux-x86_64.flatpak` bundle published
+  with every release (`flatpak build-bundle` in the release workflow, with
+  the Freedesktop 24.08 runtime referenced from Flathub). The bundle is
+  currently unsigned; GPG signing in CI is a follow-up.
+
+### Fixed
+- Relative links in release notes (`../docs/...`) 404'd on the GitHub
+  release page, which has no file context. Notes now use absolute
+  tag-pinned blob URLs.
+
+See [releases/v0.10.3.md](releases/v0.10.3.md).
+
 ## [0.10.2]
 
 Patch release fixing the v0.10.1 distribution pipeline so the published

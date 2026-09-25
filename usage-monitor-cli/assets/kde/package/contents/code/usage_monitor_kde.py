@@ -26,7 +26,7 @@ from shutil import which
 from typing import Any, Callable
 
 
-PLASMOID_VERSION = "0.10.2"
+PLASMOID_VERSION = "0.10.3"
 
 # usage-monitor has a single auto-detected source per provider, so the Source
 # combo in the settings UI only ever offers "auto".

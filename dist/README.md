@@ -14,7 +14,7 @@ and uploads the results to the GitHub release.
 | `.rpm`            | `cargo generate-rpm -p usage-monitor-cli` (+ `[package.metadata.generate-rpm]`) | `sudo rpm -i usage-monitor-cli-*.rpm` |
 | `.pkg.tar.zst`    | `dist/arch/PKGBUILD` (`usage-monitor-cli-bin`, AUR) built from the generic tarball | `makepkg -si` |
 | `.AppImage`       | `dist/appimage/make-appimage.sh`                         | `chmod +x UsageMonitor-*.AppImage && ./UsageMonitor-*.AppImage` |
-| Flatpak sources + manifest | `dist/flatpak/manifest.template.yml` rendered per release, validated by the `flatpak` CI job | Flathub submission pending; see below |
+| `.flatpak`         | `flatpak build-bundle` in the `flatpak` release job (runtime referenced from Flathub, currently unsigned) | `flatpak install --user UsageMonitor-*.flatpak` |
 | `.tar.gz` genérico| `dist/make-tarball.sh` (binary + completions + man + `install.sh`) | `./install.sh --prefix ~/.local` |
 
 All formats ship the same payload: the `usage-monitor-cli` binary (widgets

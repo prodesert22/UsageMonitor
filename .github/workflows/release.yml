@@ -253,7 +253,7 @@ jobs:
           gh release upload "$TAG" dist/artifacts/* --clobber
 
   flatpak:
-    name: Flatpak build check
+    name: Flatpak bundle
     needs: [verify, dist]
     runs-on: ubuntu-latest
     permissions:
@@ -290,9 +290,25 @@ jobs:
           printf '%s  %s\n' "$SHA" "$SOURCE" | sha256sum --check
           ./dist/flatpak/render-manifest.sh --version "$VERSION" --source-sha256 "$SHA" \
             --source-path "$SOURCE" --out /tmp/flat/dev.usage_monitor.UsageMonitor.yml
-          flatpak-builder --force-clean --disable-rofiles-fuse --user build-dir /tmp/flat/dev.usage_monitor.UsageMonitor.yml
+          flatpak-builder --repo=repo --force-clean --disable-rofiles-fuse --user build-dir /tmp/flat/dev.usage_monitor.UsageMonitor.yml
           flatpak-builder --run build-dir /tmp/flat/dev.usage_monitor.UsageMonitor.yml \
             usage-monitor-cli --help
+
+      - name: Export .flatpak bundle + upload
+        # Single-file bundle (runtime stays referenced, not embedded).
+        # Unsigned: `flatpak install` accepts it with a signature warning;
+        # proper GPG signing is a follow-up (needs a CI signing key).
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="${TAG#v}"
+          BUNDLE="UsageMonitor-$VERSION-linux-x86_64.flatpak"
+          flatpak build-bundle repo "$BUNDLE" dev.usage_monitor.UsageMonitor \
+            --runtime-repo=https://dl.flathub.org/repo/flathub.flatpakrepo
+          gh release download "$TAG" -p SHA256SUMS -D /tmp/flat
+          sha256sum "$BUNDLE" >> /tmp/flat/SHA256SUMS
+          sort -o /tmp/flat/SHA256SUMS /tmp/flat/SHA256SUMS
+          gh release upload "$TAG" "$BUNDLE" /tmp/flat/SHA256SUMS --clobber
 
   publish-release:
     name: Publish verified release

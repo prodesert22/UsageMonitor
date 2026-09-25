@@ -13,7 +13,7 @@ Download the latest release from
 ### Debian / Ubuntu — `.deb`
 
 ```bash
-sudo dpkg -i usage-monitor-cli_0.10.2-1_amd64.deb
+sudo dpkg -i usage-monitor-cli_0.10.3-1_amd64.deb
 sudo apt-get install -f   # only if dependency errors appear
 ```
 
@@ -24,8 +24,8 @@ widget backends.
 ### Fedora / RHEL / openSUSE — `.rpm`
 
 ```bash
-sudo rpm -i usage-monitor-cli-0.10.2-1.x86_64.rpm
-# or: sudo dnf install ./usage-monitor-cli-0.10.2-1.x86_64.rpm
+sudo rpm -i usage-monitor-cli-0.10.3-1.x86_64.rpm
+# or: sudo dnf install ./usage-monitor-cli-0.10.3-1.x86_64.rpm
 ```
 
 Requires `openssl-libs` + `python3`.
@@ -35,7 +35,7 @@ Requires `openssl-libs` + `python3`.
 Install the binary package from the release:
 
 ```bash
-sudo pacman -U usage-monitor-cli-bin-0.10.2-1-x86_64.pkg.tar.zst
+sudo pacman -U usage-monitor-cli-bin-0.10.3-1-x86_64.pkg.tar.zst
 ```
 
 Or build from the AUR (`usage-monitor-cli-bin` repacks the release tarball,
@@ -52,8 +52,8 @@ makepkg -si
 Any distro with `bash` + `coreutils`:
 
 ```bash
-tar -xzf usage-monitor-cli-0.10.2-linux-x86_64.tar.gz
-cd usage-monitor-cli-0.10.2-linux-x86_64
+tar -xzf usage-monitor-cli-0.10.3-linux-x86_64.tar.gz
+cd usage-monitor-cli-0.10.3-linux-x86_64
 ./install.sh                    # installs to /usr/local (needs sudo)
 ./install.sh --prefix ~/.local  # unprivileged install
 ./install.sh --uninstall        # remove again
@@ -67,8 +67,8 @@ The tarball carries the binary, man page, shell completions
 No install, no root — download, allow execution, run:
 
 ```bash
-chmod +x UsageMonitor-0.10.2-linux-x86_64.AppImage
-./UsageMonitor-0.10.2-linux-x86_64.AppImage list
+chmod +x UsageMonitor-0.10.3-linux-x86_64.AppImage
+./UsageMonitor-0.10.3-linux-x86_64.AppImage list
 ```
 
 For desktop widgets, install a native package or the generic tarball. AppImage
@@ -78,9 +78,19 @@ not bundle these libraries.
 
 ### Flatpak
 
-A per-release manifest (`dev.usage_monitor.UsageMonitor.yml`) is published
-with the other artifacts; Flathub submission is still pending. Until then,
-build it locally with `flatpak-builder` (see `dist/README.md`):
+Each release ships a prebuilt single-file bundle
+(`UsageMonitor-<version>-linux-x86_64.flatpak`; Flathub submission is
+still pending):
+
+```bash
+flatpak install --user UsageMonitor-0.10.3-linux-x86_64.flatpak
+flatpak run dev.usage_monitor.UsageMonitor list
+```
+
+The bundle references the Freedesktop 24.08 runtime (fetched from Flathub
+on first install) and is currently unsigned, so `flatpak install` shows a
+signature warning. To build from source instead, use the published manifest
+with `flatpak-builder` (see `dist/README.md`):
 
 ```bash
 flatpak-builder --force-clean build-dir dev.usage_monitor.UsageMonitor.yml
@@ -94,7 +104,7 @@ host re-execution. Sandbox configuration and credentials are separate from the
 host configuration; configure accounts explicitly inside the sandbox.
 The manifest requires the Freedesktop 24.08 Platform, SDK, and
 `org.freedesktop.Sdk.Extension.rust-stable//24.08`. Release artifacts include
-the source archive and manifest, not a prebuilt `.flatpak` bundle.
+the source archive, the rendered manifest, and the prebuilt `.flatpak` bundle.
 
 ## Cargo install
 
