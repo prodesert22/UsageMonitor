@@ -43,7 +43,7 @@ from pathlib import Path
 from shutil import which
 from typing import Any
 
-POPUP_VERSION = "0.9.0"
+POPUP_VERSION = "0.10.0"
 
 # Providers behind subscription plans (Claude, Codex) rate-limit undocumented
 # endpoints hard; the bar module and the popup therefore share one fetched value
