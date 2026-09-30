@@ -7,10 +7,17 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+## [0.10.5]
+
 ### Added
-- `usage-monitor-cli completions <shell>` prints Tab completion setup for Bash,
+- `usage-monitor-cli completions <shell>` prints Tab completion code for Bash,
   Zsh, Fish, PowerShell, or Elvish. Generated completions include command
   descriptions, options, widget targets, and provider names.
+- README and installation guides explain how Cargo users enable completions in
+  their shell startup file; native packages and the generic tarball install
+  completion files automatically.
+
+See [releases/v0.10.5.md](releases/v0.10.5.md).
 
 ## [0.10.4]
 
