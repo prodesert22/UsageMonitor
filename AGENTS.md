@@ -105,6 +105,8 @@ cargo build --release
 
 # Install CLI locally
 cargo install --path usage-monitor-cli
+# After a Cargo install, copy the shell completion line from
+# docs/installation.md#cargo-install into the shell startup file.
 
 # Run all Rust tests
 cargo test --workspace

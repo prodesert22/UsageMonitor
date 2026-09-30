@@ -59,6 +59,9 @@ Build/install the CLI first so `usage-monitor-cli` is on `PATH`:
 cargo install --path usage-monitor-cli
 ```
 
+After installing with Cargo, copy the Tab completion line for your shell from
+[installation](../installation.md#cargo-install) into its startup file.
+
 Then install the plasmoid:
 
 ```bash

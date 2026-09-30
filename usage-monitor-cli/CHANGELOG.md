@@ -7,6 +7,11 @@ notes live in [`releases/`](releases/).
 
 ## [Unreleased]
 
+### Added
+- `usage-monitor-cli completions <shell>` prints Tab completion setup for Bash,
+  Zsh, Fish, PowerShell, or Elvish. Generated completions include command
+  descriptions, options, widget targets, and provider names.
+
 ## [0.10.4]
 
 ### Added

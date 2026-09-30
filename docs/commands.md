@@ -9,6 +9,7 @@ desktop widgets, see [widgets/README.md](widgets/README.md).
 | Command | Description |
 |---------|-------------|
 | `list` | List providers with their resolved state (`enabled`, `disabled`, or `(auto)` from credential detection) |
+| `completions <bash\|zsh\|fish\|powershell\|elvish>` | Print shell completion code; see [installation](installation.md#cargo-install) for setup |
 | `fetch [provider] [--account <name>]` | Fetch usage. Without a provider, fetches all enabled providers concurrently; with one, fetches it (refused if explicitly disabled). `--account` restricts to a single account |
 | `widget waybar [provider] [--account <name>]` | Emit single-line JSON for a Waybar custom module |
 | `widget kde [provider] [--account <name>] [--pretty]` | Emit the JSON payload consumed by the KDE Plasma widget helper |

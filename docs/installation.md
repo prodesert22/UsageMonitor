@@ -113,6 +113,27 @@ cargo install usage-monitor-cli
 # installs `usage-monitor-cli` into ~/.cargo/bin
 ```
 
+**After `cargo install`, enable Tab completion:** copy the line for your shell
+into its startup file, then open a new terminal. Cargo installs only the binary;
+it does not edit shell startup files.
+
+```bash
+# Bash (~/.bashrc)
+source <(usage-monitor-cli completions bash)
+
+# Zsh (~/.zshrc)
+autoload -Uz compinit && compinit
+source <(usage-monitor-cli completions zsh)
+
+# Fish (~/.config/fish/config.fish)
+usage-monitor-cli completions fish | source
+```
+
+Tab completes commands, options, widget targets, and provider names. Press Tab
+again to list matches; how descriptions are displayed depends on your shell's
+completion settings. Native Linux packages and the generic tarball already
+install completion files into the appropriate system directory.
+
 Make sure `~/.cargo/bin` is on your `PATH` (rustup adds this for you;
 otherwise add `export PATH="$HOME/.cargo/bin:$PATH"` to your shell profile).
 
@@ -148,6 +169,9 @@ Install locally:
 ```bash
 cargo install --path usage-monitor-cli
 ```
+
+After installation, copy the Tab completion line for your shell from
+[Cargo install](#cargo-install) into its startup file.
 
 Verify:
 
@@ -217,6 +241,9 @@ cd UsageMonitor
 git pull
 cargo install --path usage-monitor-cli   # or cargo build --release
 ```
+
+If this is your first Cargo install, copy the Tab completion line for your
+shell from [Cargo install](#cargo-install) into its startup file.
 
 ## Uninstall
 

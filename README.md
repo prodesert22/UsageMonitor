@@ -57,12 +57,30 @@ cargo install usage-monitor-cli
 # installs `usage-monitor-cli` into ~/.cargo/bin (make sure it is on your PATH)
 ```
 
+**After installing with Cargo, enable Tab completion:** copy the line for your
+shell into its startup file, then open a new terminal:
+
+```bash
+# ~/.bashrc (Bash)
+source <(usage-monitor-cli completions bash)
+
+# ~/.zshrc (Zsh)
+autoload -Uz compinit && compinit
+source <(usage-monitor-cli completions zsh)
+
+# ~/.config/fish/config.fish (Fish)
+usage-monitor-cli completions fish | source
+```
+
 Or from a local checkout: `cargo install --path usage-monitor-cli`. Then,
 optionally, install a desktop widget:
 
 ```bash
 usage-monitor-cli widget install all   # KDE plasmoid + Waybar wrapper
 ```
+
+The same completion step applies to `cargo install --path usage-monitor-cli`.
+See [installation](docs/installation.md#cargo-install) for details.
 
 See [docs/installation.md](docs/installation.md) for prerequisites and PATH
 setup.

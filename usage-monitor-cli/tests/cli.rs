@@ -537,3 +537,23 @@ fn generate_dist_ignores_user_config_and_emits_packaging_assets() {
     }
     assert_eq!(std::fs::read_to_string(config).unwrap(), "not valid TOML [");
 }
+
+#[test]
+fn completions_include_commands_and_provider_names_without_loading_config() {
+    let env = TestEnv::new("completions-invalid-config");
+    let config = env.config_path();
+    std::fs::create_dir_all(config.parent().unwrap()).unwrap();
+    std::fs::write(&config, "not valid TOML [").unwrap();
+    let out = env.run(&["completions", "bash"]);
+    assert!(out.status.success(), "{}", stderr(&out));
+    let script = stdout(&out);
+    for value in ["fetch", "widget", "antigravity", "openai", "waybar"] {
+        assert!(
+            script.contains(value),
+            "missing {value} in Bash completions"
+        );
+    }
+    let fish = env.run(&["completions", "fish"]);
+    assert!(fish.status.success(), "{}", stderr(&fish));
+    assert!(stdout(&fish).contains("antigravity"));
+}

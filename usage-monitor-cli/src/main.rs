@@ -18,6 +18,9 @@ async fn main() -> Result<()> {
     if let Command::GenerateDist { out_dir } = &cli.command {
         return dist_assets::run_generate_dist(out_dir);
     }
+    if let Command::Completions { shell } = &cli.command {
+        return dist_assets::print_completions(*shell);
+    }
     let registry = ProviderRegistry::with_defaults();
     let config = AppConfig::load().map_err(|e| anyhow::anyhow!("{}", e))?;
     match cli.command {
@@ -114,6 +117,7 @@ async fn main() -> Result<()> {
         },
         Command::Provider(args) => dynamic::handle_dynamic_provider_cmd(&registry, config, args)?,
         Command::GenerateDist { out_dir } => dist_assets::run_generate_dist(&out_dir)?,
+        Command::Completions { .. } => unreachable!("handled before loading config"),
     }
     Ok(())
 }

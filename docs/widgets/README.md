@@ -67,6 +67,9 @@ so the desktop widgets stay in step without a manual reinstall. `widget sync`
 never installs a widget that was not already installed, and the autostart entry
 is removed once the last widget is uninstalled.
 
+For a first Cargo install, copy the Tab completion line for your shell from
+[installation](../installation.md#cargo-install) into its startup file.
+
 ### Update notice in the widgets
 
 Beyond the silent login sync, each widget notices it is outdated itself: the

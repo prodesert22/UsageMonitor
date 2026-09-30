@@ -15,16 +15,14 @@ pub(crate) struct Cli {
 
 #[derive(Subcommand)]
 pub(crate) enum Command {
+    /// List providers and their current state.
     List,
-    Enable {
-        provider: String,
-    },
-    Disable {
-        provider: String,
-    },
-    Auto {
-        provider: String,
-    },
+    /// Enable a provider.
+    Enable { provider: String },
+    /// Disable a provider.
+    Disable { provider: String },
+    /// Return a provider to automatic credential detection.
+    Auto { provider: String },
     #[command(name = "opencode-go", subcommand)]
     OpencodeGo(OpencodeGoCmd),
     #[command(name = "claude", subcommand)]
@@ -37,6 +35,7 @@ pub(crate) enum Command {
     OpenAI(ProviderCmd),
     #[command(name = "gemini", subcommand)]
     Gemini(GeminiCmd),
+    /// Fetch usage from one provider or all enabled providers.
     Fetch {
         provider: Option<String>,
         #[arg(long)]
@@ -48,8 +47,14 @@ pub(crate) enum Command {
         #[arg(long)]
         credentials_path: Option<String>,
     },
+    /// Manage desktop widgets and print widget data.
     #[command(subcommand)]
     Widget(WidgetCmd),
+    /// Print shell completion code for the selected shell.
+    Completions {
+        #[arg(value_enum)]
+        shell: clap_complete::Shell,
+    },
     /// Generate shell completions and the man page into a directory.
     ///
     /// Hidden from help: this exists so distro packages (deb/rpm/Arch),
@@ -57,9 +62,7 @@ pub(crate) enum Command {
     /// completions + man without duplicating the clap definition.
     /// Invoked by `dist/make-tarball.sh` and the release workflow.
     #[command(hide = true, name = "generate-dist")]
-    GenerateDist {
-        out_dir: PathBuf,
-    },
+    GenerateDist { out_dir: PathBuf },
     #[command(external_subcommand)]
     Provider(Vec<String>),
 }
